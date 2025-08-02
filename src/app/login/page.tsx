@@ -56,7 +56,7 @@ export default function LoginPage() {
         <Card>
           <CardHeader className="space-y-1 text-center">
             <div className="flex items-center justify-center gap-2 mb-4">
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary text-primary-foreground">
+                <div className="flex items-center justify-center w-10 h-10 rounded-lg btn-gradient-bg text-primary-foreground">
                 <Video className="w-6 h-6" />
                 </div>
                 <h1 className="text-3xl font-bold text-foreground">Ripple</h1>
