@@ -49,7 +49,7 @@ export default function CallPage() {
     const { user } = useAuth();
     const sessionId = searchParams.get('id') || 'default-session';
     
-    const { peers, isConnected } = useP2P(sessionId, localStream, user?.displayName || 'Anonymous');
+    const { peers, isConnected } = useP2P(sessionId, localStream);
 
     useEffect(() => {
         const getCameraPermission = async () => {
@@ -102,9 +102,8 @@ export default function CallPage() {
     }, [isCameraOn, isMicOn, localStream]);
 
     const participants = Object.values(peers);
-    const gridCols = participants.length <= 1 ? 1 : (participants.length <= 4 ? 2 : 3);
-    const gridRows = participants.length === 0 ? 1 : Math.ceil((participants.length + 1) / gridCols);
-
+    const gridColsClass = participants.length <= 1 ? 'grid-cols-1' : (participants.length <= 4 ? 'grid-cols-2' : 'grid-cols-3');
+    const gridRowsClass = participants.length === 0 ? 'grid-rows-1' : `grid-rows-${Math.ceil((participants.length + 1) / (participants.length <= 1 ? 1 : (participants.length <= 4 ? 2 : 3)))}`;
 
   return (
     <div className="flex h-screen max-h-screen bg-black text-white overflow-hidden">
@@ -129,7 +128,7 @@ export default function CallPage() {
         </header>
 
         {/* Main Video Grid */}
-        <main className={`flex-1 grid gap-2 p-4 pt-20 grid-cols-${gridCols} grid-rows-${gridRows}`}>
+        <main className={`flex-1 grid gap-2 p-4 pt-20 ${gridColsClass} ${gridRowsClass}`}>
             <div className="relative aspect-video rounded-lg overflow-hidden bg-black flex items-center justify-center">
                  <video ref={localVideoRef} className={`w-full h-full object-cover ${isCameraOn ? '' : 'hidden'}`} autoPlay muted playsInline />
                 {(!hasCameraPermission || !isCameraOn) && (
@@ -157,7 +156,7 @@ export default function CallPage() {
              {!isConnected && (
               <div className="absolute inset-0 bg-black/70 flex items-center justify-center flex-col gap-4">
                 <Spinner size="large" />
-                <p className="text-muted-foreground">Connecting to call...</p>
+                <p className="text-muted-foreground">Connecting to signaling server...</p>
               </div>
             )}
         </main>
