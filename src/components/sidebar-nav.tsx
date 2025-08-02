@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -5,7 +6,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from '@/components/ui/sidebar';
-import { LayoutDashboard, Users, Phone, Settings } from 'lucide-react';
+import { LayoutDashboard, Users, Phone, Settings, LogIn } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -16,6 +17,8 @@ const navItems = [
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
+const authItem = { href: '/login', label: 'Login', icon: LogIn };
+
 export function SidebarNav() {
   const pathname = usePathname();
 
@@ -23,18 +26,31 @@ export function SidebarNav() {
     <SidebarMenu>
       {navItems.map((item) => (
         <SidebarMenuItem key={item.href}>
-          <SidebarMenuButton
-            asChild
-            isActive={pathname === item.href}
-            tooltip={item.label}
-          >
-            <Link href={item.href}>
-              <item.icon />
-              <span>{item.label}</span>
+            <Link href={item.href} passHref>
+              <SidebarMenuButton
+                asChild
+                isActive={pathname === item.href}
+                tooltip={item.label}
+              >
+                <div>
+                    <item.icon />
+                    <span>{item.label}</span>
+                </div>
+              </SidebarMenuButton>
             </Link>
-          </SidebarMenuButton>
         </SidebarMenuItem>
       ))}
+       <SidebarMenuItem key={authItem.href}>
+          <Link href={authItem.href}>
+            <SidebarMenuButton
+              isActive={pathname === authItem.href}
+              tooltip={authItem.label}
+            >
+              <authItem.icon />
+              <span>{authItem.label}</span>
+            </SidebarMenuButton>
+          </Link>
+        </SidebarMenuItem>
     </SidebarMenu>
   );
 }
