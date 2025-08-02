@@ -84,7 +84,7 @@ body {
   }
   body {
     @apply bg-background text-foreground;
-    background-image: radial-gradient(circle at top left, hsl(197 77% 53% / 0.1), transparent), radial-gradient(circle at bottom right, hsl(173 44% 62% / 0.1), transparent);
+    background-image: radial-gradient(circle at top left, hsl(var(--primary) / 0.1), transparent), radial-gradient(circle at bottom right, hsl(var(--accent) / 0.1), transparent);
     background-attachment: fixed;
   }
 }

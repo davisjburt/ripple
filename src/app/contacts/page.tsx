@@ -75,7 +75,7 @@ export default function ContactsPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <Card className="bg-background/60 backdrop-blur-xl border border-white/20 shadow-lg">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Users />

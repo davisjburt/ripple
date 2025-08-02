@@ -56,7 +56,7 @@ export default function SignupPage() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-md"
       >
-        <Card className="bg-background/80 backdrop-blur-xl border-white/20 shadow-2xl">
+        <Card>
           <CardHeader className="space-y-1 text-center">
             <div className="flex items-center justify-center gap-2 mb-4">
                 <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary text-primary-foreground">

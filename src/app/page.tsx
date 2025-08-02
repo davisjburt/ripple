@@ -48,7 +48,7 @@ export default function Dashboard() {
 
       <div className="grid gap-8 md:grid-cols-2">
         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.2 }}>
-          <Card className="bg-background/60 backdrop-blur-xl border border-white/20 shadow-lg">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Plus className="text-primary" />
@@ -68,7 +68,7 @@ export default function Dashboard() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.2 }}>
-          <Card className="bg-background/60 backdrop-blur-xl border border-white/20 shadow-lg">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ChevronRight className="text-primary" />
@@ -89,7 +89,7 @@ export default function Dashboard() {
       </div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.4 }}>
-        <Card className="bg-background/60 backdrop-blur-xl border border-white/20 shadow-lg">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Calendar />
