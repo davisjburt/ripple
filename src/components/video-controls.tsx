@@ -4,23 +4,22 @@
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { Mic, MicOff, Video, VideoOff, PhoneOff, ScreenShare, MessageSquare } from 'lucide-react';
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 
 interface VideoControlsProps {
     isCameraOn: boolean;
     onCameraToggle: () => void;
+    isMicOn: boolean;
+    onMicToggle: () => void;
 }
 
-export function VideoControls({ isCameraOn, onCameraToggle }: VideoControlsProps) {
-  const [isMicOn, setIsMicOn] = useState(true);
-
+export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle }: VideoControlsProps) {
   const controls = [
     {
       label: isMicOn ? 'Mute' : 'Unmute',
       icon: isMicOn ? <Mic /> : <MicOff className="text-red-500"/>,
-      onClick: () => setIsMicOn(!isMicOn),
+      onClick: onMicToggle,
       isActive: isMicOn,
     },
     {

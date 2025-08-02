@@ -9,6 +9,7 @@ import { Calendar, ChevronRight, Plus, Video } from 'lucide-react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/use-auth';
+import { useState } from 'react';
 
 const meetings = [
   {
@@ -34,6 +35,11 @@ const meetings = [
 export default function Dashboard() {
   const { user } = useAuth();
   const firstName = user?.displayName?.split(' ')[0];
+  const [sessionId, setSessionId] = useState('');
+
+  const generateSessionId = () => {
+    return Math.random().toString(36).substring(2, 9);
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-8">
@@ -57,7 +63,7 @@ export default function Dashboard() {
               <CardDescription>Instantly create a new meeting room.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Link href="/call">
+              <Link href={`/call?id=${generateSessionId()}`}>
                 <Button className="w-full" size="lg">
                   <Video className="mr-2 h-5 w-5" />
                   Create Instant Meeting
@@ -78,9 +84,9 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="flex gap-2">
-                <Input placeholder="Enter Session ID..." className="bg-background/80" />
-                <Link href="/call">
-                  <Button>Join</Button>
+                <Input placeholder="Enter Session ID..." className="bg-background/80" value={sessionId} onChange={e => setSessionId(e.target.value)} />
+                <Link href={`/call?id=${sessionId}`}>
+                  <Button disabled={!sessionId}>Join</Button>
                 </Link>
               </div>
             </CardContent>

@@ -1,41 +1,68 @@
 
 'use client';
 
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { ChevronLeft, Maximize, UserPlus } from 'lucide-react';
+import { ChevronLeft, UserPlus, VideoOff } from 'lucide-react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
 import { VideoControls } from '@/components/video-controls';
 import { ChatPanel } from '@/components/chat-panel';
-import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useSearchParams } from 'next/navigation';
+import { useP2P } from '@/hooks/use-p2p';
+import { useAuth } from '@/hooks/use-auth';
+import { Spinner } from '@/components/ui/spinner';
 
-const participants = [
-  { name: 'Sarah Connor', avatar: 'https://placehold.co/100x100/E9F0F0/333?text=SC', isHost: false },
-  { name: 'John Doe', avatar: 'https://placehold.co/100x100/E9E9F0/333?text=JD', isHost: false },
-  { name: 'Jane Smith', avatar: 'https://placehold.co/100x100/F0E9F0/333?text=JS', isHost: false },
-];
+interface Participant {
+  id: string;
+  stream: MediaStream;
+  name: string;
+}
+
+function VideoTile({ stream, name }: { stream: MediaStream, name: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  return (
+    <div className="relative aspect-video rounded-lg overflow-hidden bg-black flex items-center justify-center">
+      <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline />
+      <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded-md text-sm">{name}</div>
+    </div>
+  );
+}
+
 
 export default function CallPage() {
-    const videoRef = useRef<HTMLVideoElement>(null);
+    const localVideoRef = useRef<HTMLVideoElement>(null);
+    const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [hasCameraPermission, setHasCameraPermission] = useState(false);
     const [isCameraOn, setIsCameraOn] = useState(true);
+    const [isMicOn, setIsMicOn] = useState(true);
     const { toast } = useToast();
+    const searchParams = useSearchParams();
+    const { user } = useAuth();
+    const sessionId = searchParams.get('id') || 'default-session';
+    
+    const { peers, isConnected } = useP2P(sessionId, localStream, user?.displayName || 'Anonymous');
 
     useEffect(() => {
         const getCameraPermission = async () => {
           try {
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                const stream = await navigator.mediaDevices.getUserMedia({video: true});
+                const stream = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
+                setLocalStream(stream);
                 setHasCameraPermission(true);
                 setIsCameraOn(true);
+                setIsMicOn(true);
 
-                if (videoRef.current) {
-                  videoRef.current.srcObject = stream;
+                if (localVideoRef.current) {
+                  localVideoRef.current.srcObject = stream;
                 }
             } else {
                  toast({
@@ -57,17 +84,26 @@ export default function CallPage() {
         };
 
         getCameraPermission();
+        
+        return () => {
+          localStream?.getTracks().forEach(track => track.stop());
+        }
       }, [toast]);
     
       useEffect(() => {
-        if (videoRef.current && videoRef.current.srcObject) {
-            const stream = videoRef.current.srcObject as MediaStream;
-            const videoTrack = stream.getVideoTracks()[0];
-            if (videoTrack) {
-                videoTrack.enabled = isCameraOn;
-            }
+        if (localStream) {
+            localStream.getVideoTracks().forEach(track => {
+                track.enabled = isCameraOn;
+            });
+             localStream.getAudioTracks().forEach(track => {
+                track.enabled = isMicOn;
+            });
         }
-    }, [isCameraOn]);
+    }, [isCameraOn, isMicOn, localStream]);
+
+    const participants = Object.values(peers);
+    const gridCols = participants.length <= 1 ? 1 : (participants.length <= 4 ? 2 : 3);
+    const gridRows = participants.length === 0 ? 1 : Math.ceil((participants.length + 1) / gridCols);
 
 
   return (
@@ -83,7 +119,7 @@ export default function CallPage() {
             </Button>
             <div>
               <h2 className="font-semibold">Project Phoenix Kick-off</h2>
-              <p className="text-xs text-muted-foreground">Session ID: 123-456-789</p>
+              <p className="text-xs text-muted-foreground">Session ID: {sessionId}</p>
             </div>
           </div>
           <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30">
@@ -93,9 +129,9 @@ export default function CallPage() {
         </header>
 
         {/* Main Video Grid */}
-        <main className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-4 pt-20">
-            <div className="relative aspect-video rounded-lg overflow-hidden lg:col-span-2 lg:row-span-2 bg-black flex items-center justify-center">
-                 <video ref={videoRef} className={`w-full h-full object-cover ${isCameraOn ? '' : 'hidden'}`} autoPlay muted playsInline />
+        <main className={`flex-1 grid gap-2 p-4 pt-20 grid-cols-${gridCols} grid-rows-${gridRows}`}>
+            <div className="relative aspect-video rounded-lg overflow-hidden bg-black flex items-center justify-center">
+                 <video ref={localVideoRef} className={`w-full h-full object-cover ${isCameraOn ? '' : 'hidden'}`} autoPlay muted playsInline />
                 {(!hasCameraPermission || !isCameraOn) && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white p-4">
                         {!hasCameraPermission ? (
@@ -113,19 +149,27 @@ export default function CallPage() {
                         )}
                     </div>
                 )}
-                <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded-md text-sm">Alex Norton (You)</div>
+                <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded-md text-sm">{user?.displayName || 'You'} (You)</div>
             </div>
-            {participants.map((p, i) => (
-                <div key={i} className="relative aspect-video rounded-lg overflow-hidden">
-                    <Image src={`https://placehold.co/600x400.png`} layout="fill" objectFit="cover" alt={p.name} data-ai-hint="person video call" />
-                    <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded-md text-sm">{p.name}</div>
-                </div>
+            {participants.map((p) => (
+                <VideoTile key={p.id} stream={p.stream} name={p.name} />
             ))}
+             {!isConnected && (
+              <div className="absolute inset-0 bg-black/70 flex items-center justify-center flex-col gap-4">
+                <Spinner size="large" />
+                <p className="text-muted-foreground">Connecting to call...</p>
+              </div>
+            )}
         </main>
         
         {/* Controls */}
         <footer className="absolute bottom-0 left-1/2 -translate-x-1/2 z-20 p-4">
-          <VideoControls isCameraOn={isCameraOn} onCameraToggle={() => setIsCameraOn(prev => !prev)} />
+          <VideoControls 
+            isCameraOn={isCameraOn} 
+            onCameraToggle={() => setIsCameraOn(prev => !prev)}
+            isMicOn={isMicOn}
+            onMicToggle={() => setIsMicOn(prev => !prev)}
+            />
         </footer>
       </div>
 
