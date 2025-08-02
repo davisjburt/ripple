@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -22,6 +23,7 @@ const participants = [
 export default function CallPage() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [hasCameraPermission, setHasCameraPermission] = useState(false);
+    const [isCameraOn, setIsCameraOn] = useState(true);
     const { toast } = useToast();
 
     useEffect(() => {
@@ -30,9 +32,10 @@ export default function CallPage() {
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                 const stream = await navigator.mediaDevices.getUserMedia({video: true});
                 setHasCameraPermission(true);
+                setIsCameraOn(true);
 
                 if (videoRef.current) {
-                videoRef.current.srcObject = stream;
+                  videoRef.current.srcObject = stream;
                 }
             } else {
                  toast({
@@ -55,6 +58,16 @@ export default function CallPage() {
 
         getCameraPermission();
       }, [toast]);
+    
+      useEffect(() => {
+        if (videoRef.current && videoRef.current.srcObject) {
+            const stream = videoRef.current.srcObject as MediaStream;
+            const videoTrack = stream.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.enabled = isCameraOn;
+            }
+        }
+    }, [isCameraOn]);
 
 
   return (
@@ -82,15 +95,22 @@ export default function CallPage() {
         {/* Main Video Grid */}
         <main className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-4 pt-20">
             <div className="relative aspect-video rounded-lg overflow-hidden lg:col-span-2 lg:row-span-2 bg-black flex items-center justify-center">
-                 <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
-                {!hasCameraPermission && (
+                 <video ref={videoRef} className={`w-full h-full object-cover ${isCameraOn ? '' : 'hidden'}`} autoPlay muted playsInline />
+                {(!hasCameraPermission || !isCameraOn) && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white p-4">
-                         <Alert variant="destructive" className="max-w-sm">
-                            <AlertTitle>Camera Access Required</AlertTitle>
-                            <AlertDescription>
-                                Please allow camera access to use this feature. You may need to grant permissions in your browser settings.
-                            </AlertDescription>
-                        </Alert>
+                        {!hasCameraPermission ? (
+                             <Alert variant="destructive" className="max-w-sm">
+                                <AlertTitle>Camera Access Required</AlertTitle>
+                                <AlertDescription>
+                                    Please allow camera access to use this feature. You may need to grant permissions in your browser settings.
+                                </AlertDescription>
+                            </Alert>
+                        ) : (
+                            <div className="text-center">
+                                <VideoOff className="h-12 w-12 mx-auto mb-2"/>
+                                <p>Camera is off</p>
+                            </div>
+                        )}
                     </div>
                 )}
                 <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded-md text-sm">Alex Norton (You)</div>
@@ -105,7 +125,7 @@ export default function CallPage() {
         
         {/* Controls */}
         <footer className="absolute bottom-0 left-1/2 -translate-x-1/2 z-20 p-4">
-          <VideoControls />
+          <VideoControls isCameraOn={isCameraOn} onCameraToggle={() => setIsCameraOn(prev => !prev)} />
         </footer>
       </div>
 

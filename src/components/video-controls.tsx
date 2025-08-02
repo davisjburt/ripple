@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -7,36 +8,36 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 
-export function VideoControls() {
+interface VideoControlsProps {
+    isCameraOn: boolean;
+    onCameraToggle: () => void;
+}
+
+export function VideoControls({ isCameraOn, onCameraToggle }: VideoControlsProps) {
   const [isMicOn, setIsMicOn] = useState(true);
-  const [isCameraOn, setIsCameraOn] = useState(true);
 
   const controls = [
     {
       label: isMicOn ? 'Mute' : 'Unmute',
       icon: isMicOn ? <Mic /> : <MicOff className="text-red-500"/>,
       onClick: () => setIsMicOn(!isMicOn),
-      variant: isMicOn ? 'secondary' : 'destructive',
       isActive: isMicOn,
     },
     {
       label: isCameraOn ? 'Turn off camera' : 'Turn on camera',
       icon: isCameraOn ? <Video /> : <VideoOff className="text-red-500" />,
-      onClick: () => setIsCameraOn(!isCameraOn),
-      variant: isCameraOn ? 'secondary' : 'destructive',
+      onClick: onCameraToggle,
       isActive: isCameraOn,
     },
     {
       label: 'Share screen',
       icon: <ScreenShare />,
       onClick: () => {},
-      variant: 'secondary',
     },
     {
       label: 'Show chat',
       icon: <MessageSquare />,
       onClick: () => {},
-      variant: 'secondary',
     },
   ];
 
@@ -55,7 +56,7 @@ export function VideoControls() {
                 variant="ghost"
                 size="icon"
                 onClick={control.onClick}
-                className={`w-14 h-14 rounded-full text-white hover:bg-white/10 ${!control.isActive ? 'bg-white/10' : ''}`}
+                className={`w-14 h-14 rounded-full text-white hover:bg-white/10 ${control.isActive === false ? 'bg-white/10' : ''}`}
               >
                 {control.icon}
               </Button>
