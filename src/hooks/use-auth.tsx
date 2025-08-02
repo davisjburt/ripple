@@ -2,14 +2,13 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 import { Spinner } from '@/components/ui/spinner';
-
-// This is a placeholder for a real auth context.
-// In a real app, this would be replaced with a library like Firebase Auth,
-// NextAuth.js, or your own authentication logic.
+import { usePathname, useRouter } from 'next/navigation';
 
 interface AuthContextType {
-  user: any | null;
+  user: User | null;
   loading: boolean;
 }
 
@@ -19,20 +18,30 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    // Simulate fetching user data
-    setTimeout(() => {
-      setUser({
-        displayName: 'Alex Norton',
-        email: 'alex.norton@example.com',
-        photoURL: `https://placehold.co/40x40/F0E9E9/333?text=AN`,
-      });
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
       setLoading(false);
-    }, 1000);
+    });
+
+    return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const isAuthPage = pathname === '/login' || pathname === '/signup';
+    
+    if (!user && !isAuthPage) {
+      router.push('/login');
+    }
+  }, [user, loading, pathname, router]);
+
 
   if (loading) {
     return (
