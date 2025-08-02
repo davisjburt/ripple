@@ -11,29 +11,25 @@ export const metadata: Metadata = {
   description: 'A modern video calling application.',
 };
 
-function AppContent({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const isAuthPage = pathname === '/login' || pathname === '/signup';
-
-  return (
-    <>
-      {isAuthPage ? (
-        children
-      ) : (
-        <AppLayout>
-          {children}
-        </AppLayout>
-      )}
-      <Toaster />
-    </>
-  );
-}
-
-
 function RootLayoutContent({ children }: { children: React.ReactNode }) {
     'use client';
-    return <AppContent>{children}</AppContent>
+    const pathname = usePathname();
+    const isAuthPage = pathname === '/login' || pathname === '/signup';
+  
+    return (
+      <>
+        {isAuthPage ? (
+          children
+        ) : (
+          <AppLayout>
+            {children}
+          </AppLayout>
+        )}
+        <Toaster />
+      </>
+    );
 }
+
 
 export default function RootLayout({
   children,
