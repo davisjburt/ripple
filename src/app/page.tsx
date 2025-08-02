@@ -42,7 +42,7 @@ export default function Dashboard() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome back, <span className="font-wavy"><span className="btn-gradient-bg text-transparent bg-clip-text">{firstName || 'User'}</span></span></h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome back, <span className="font-wavy btn-gradient-bg text-transparent bg-clip-text">{firstName || 'User'}</span></h1>
         <p className="text-muted-foreground">Ready to connect? Here’s what’s on your plate today.</p>
       </motion.div>
 
