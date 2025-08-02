@@ -45,7 +45,7 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased" suppressHydrationWarning>
         <AuthProvider>
-            <AppContent>{children}</AppContent>
+          <AppContent>{children}</AppContent>
         </AuthProvider>
       </body>
     </html>
