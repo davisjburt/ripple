@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Calendar, ChevronRight, Plus, Video } from 'lucide-react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { useAuth } from '@/hooks/use-auth';
 
 const meetings = [
   {
@@ -30,6 +32,8 @@ const meetings = [
 ];
 
 export default function Dashboard() {
+  const { user } = useAuth();
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-8">
       <motion.div
@@ -37,7 +41,7 @@ export default function Dashboard() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome back, Alex</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome back, {user?.displayName || 'User'}</h1>
         <p className="text-muted-foreground">Ready to connect? Here’s what’s on your plate today.</p>
       </motion.div>
 
