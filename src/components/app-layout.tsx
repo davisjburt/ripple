@@ -31,10 +31,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar>
         <SidebarHeader className="p-4">
           <div className="flex items-center gap-2">
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg btn-gradient-bg text-primary-foreground">
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary text-primary-foreground">
               <Video className="w-5 h-5" />
             </div>
-            <h1 className="text-2xl font-wavy text-foreground">Ripple</h1>
+            <h1 className="text-2xl font-bold text-foreground">Ripple</h1>
           </div>
         </SidebarHeader>
         <SidebarContent>
