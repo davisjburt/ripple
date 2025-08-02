@@ -4,7 +4,6 @@ import './globals.css';
 import { AppLayout } from '@/components/app-layout';
 import { Toaster } from '@/components/ui/toaster';
 import React from 'react';
-import { AuthProvider } from '@/hooks/use-auth';
 import { usePathname } from 'next/navigation';
 
 export const metadata: Metadata = {
@@ -13,8 +12,6 @@ export const metadata: Metadata = {
 };
 
 function AppContent({ children }: { children: React.ReactNode }) {
-  'use client';
-
   const pathname = usePathname();
   const isAuthPage = pathname === '/login' || pathname === '/signup';
 
@@ -32,6 +29,12 @@ function AppContent({ children }: { children: React.ReactNode }) {
   );
 }
 
+
+function RootLayoutContent({ children }: { children: React.ReactNode }) {
+    'use client';
+    return <AppContent>{children}</AppContent>
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -45,9 +48,7 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body className="font-body antialiased" suppressHydrationWarning>
-        <AuthProvider>
-          <AppContent>{children}</AppContent>
-        </AuthProvider>
+        <RootLayoutContent>{children}</RootLayoutContent>
       </body>
     </html>
   );

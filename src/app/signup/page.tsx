@@ -16,7 +16,6 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Video } from 'lucide-react';
 import { useState } from 'react';
-import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
@@ -26,7 +25,6 @@ export default function SignupPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
-    const auth = getAuth();
     const router = useRouter();
     const { toast } = useToast();
 
@@ -34,13 +32,14 @@ export default function SignupPage() {
         e.preventDefault();
         setLoading(true);
         try {
-            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            await updateProfile(userCredential.user, { displayName: name });
+            // This is a placeholder for the actual sign-up logic
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            console.log('Signing up with', name, email, password);
             router.push('/');
         } catch (error: any) {
             toast({
                 title: "Sign up failed",
-                description: error.message,
+                description: "An unexpected error occurred.",
                 variant: 'destructive'
             })
         } finally {

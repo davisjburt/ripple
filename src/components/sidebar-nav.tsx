@@ -9,7 +9,6 @@ import {
 import { LayoutDashboard, Users, Phone, Settings, LogIn, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAuth } from '@/hooks/use-auth';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -25,7 +24,7 @@ const authItems = [
 
 export function SidebarNav() {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const user = true; // Placeholder
 
   return (
     <SidebarMenu>

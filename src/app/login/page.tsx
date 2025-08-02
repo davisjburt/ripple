@@ -24,7 +24,6 @@ export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
-    const auth = getAuth();
     const router = useRouter();
     const { toast } = useToast();
 
@@ -32,12 +31,14 @@ export default function LoginPage() {
         e.preventDefault();
         setLoading(true);
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            // This is a placeholder for the actual sign-in logic
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            console.log('Signing in with', email, password);
             router.push('/');
         } catch (error: any) {
              toast({
                 title: "Login failed",
-                description: error.message,
+                description: "An unexpected error occurred.",
                 variant: 'destructive'
             })
         } finally {
