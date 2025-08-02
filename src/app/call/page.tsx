@@ -9,15 +9,54 @@ import { motion } from 'framer-motion';
 import { VideoControls } from '@/components/video-controls';
 import { ChatPanel } from '@/components/chat-panel';
 import Image from 'next/image';
+import { useEffect, useRef, useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const participants = [
-  { name: 'Alex Norton', avatar: 'https://placehold.co/100x100/F0E9E9/333?text=AN', isHost: true },
   { name: 'Sarah Connor', avatar: 'https://placehold.co/100x100/E9F0F0/333?text=SC', isHost: false },
   { name: 'John Doe', avatar: 'https://placehold.co/100x100/E9E9F0/333?text=JD', isHost: false },
   { name: 'Jane Smith', avatar: 'https://placehold.co/100x100/F0E9F0/333?text=JS', isHost: false },
 ];
 
 export default function CallPage() {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const [hasCameraPermission, setHasCameraPermission] = useState(false);
+    const { toast } = useToast();
+
+    useEffect(() => {
+        const getCameraPermission = async () => {
+          try {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                const stream = await navigator.mediaDevices.getUserMedia({video: true});
+                setHasCameraPermission(true);
+
+                if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                }
+            } else {
+                 toast({
+                    variant: 'destructive',
+                    title: 'Media Devices not supported',
+                    description: 'Your browser does not support camera access.',
+                });
+                setHasCameraPermission(false);
+            }
+          } catch (error) {
+            console.error('Error accessing camera:', error);
+            setHasCameraPermission(false);
+            toast({
+              variant: 'destructive',
+              title: 'Camera Access Denied',
+              description: 'Please enable camera permissions in your browser settings to use this app.',
+            });
+          }
+        };
+
+        getCameraPermission();
+      }, [toast]);
+
+
   return (
     <div className="flex h-screen max-h-screen bg-black text-white overflow-hidden">
       <div className="flex flex-1 flex-col relative">
@@ -42,11 +81,21 @@ export default function CallPage() {
 
         {/* Main Video Grid */}
         <main className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-4 pt-20">
-            <div className="relative aspect-video rounded-lg overflow-hidden lg:col-span-2 lg:row-span-2">
-                <Image src="https://placehold.co/1280x720.png" layout="fill" objectFit="cover" alt="Main speaker" data-ai-hint="person video call" />
+            <div className="relative aspect-video rounded-lg overflow-hidden lg:col-span-2 lg:row-span-2 bg-black flex items-center justify-center">
+                 <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+                {!hasCameraPermission && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white p-4">
+                         <Alert variant="destructive" className="max-w-sm">
+                            <AlertTitle>Camera Access Required</AlertTitle>
+                            <AlertDescription>
+                                Please allow camera access to use this feature. You may need to grant permissions in your browser settings.
+                            </AlertDescription>
+                        </Alert>
+                    </div>
+                )}
                 <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded-md text-sm">Alex Norton (You)</div>
             </div>
-            {participants.slice(1).map((p, i) => (
+            {participants.map((p, i) => (
                 <div key={i} className="relative aspect-video rounded-lg overflow-hidden">
                     <Image src={`https://placehold.co/600x400.png`} layout="fill" objectFit="cover" alt={p.name} data-ai-hint="person video call" />
                     <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded-md text-sm">{p.name}</div>
