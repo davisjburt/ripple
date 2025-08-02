@@ -16,11 +16,13 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Video } from 'lucide-react';
 import { useState } from 'react';
-import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
-export default function LoginPage() {
+
+export default function SignupPage() {
+    const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -28,15 +30,16 @@ export default function LoginPage() {
     const router = useRouter();
     const { toast } = useToast();
 
-    const handleSignIn = async (e: React.FormEvent) => {
+    const handleSignUp = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            await updateProfile(userCredential.user, { displayName: name });
             router.push('/');
         } catch (error: any) {
-             toast({
-                title: "Login failed",
+            toast({
+                title: "Sign up failed",
                 description: error.message,
                 variant: 'destructive'
             })
@@ -61,33 +64,32 @@ export default function LoginPage() {
                 </div>
                 <h1 className="text-3xl font-bold text-foreground">Ripple</h1>
             </div>
-            <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
+            <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
             <CardDescription>
-              Sign in to continue to your account.
+              Enter your details to get started.
             </CardDescription>
           </CardHeader>
-          <form onSubmit={handleSignIn}>
+          <form onSubmit={handleSignUp}>
           <CardContent className="space-y-4">
+             <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
+              <Input id="name" type="text" placeholder="John Doe" value={name} onChange={(e) => setName(e.target.value)} required/>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" placeholder="m@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required/>
             </div>
             <div className="space-y-2">
-                <div className="flex items-center">
-                    <Label htmlFor="password">Password</Label>
-                    <Link href="#" className="ml-auto inline-block text-sm underline">
-                        Forgot your password?
-                    </Link>
-                </div>
+              <Label htmlFor="password">Password</Label>
               <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required/>
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4">
-            <Button className="w-full" type="submit" disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</Button>
+            <Button className="w-full" type="submit" disabled={loading}>{loading ? 'Creating account...' : 'Sign up'}</Button>
             <div className="text-center text-sm">
-                Don't have an account?{' '}
-                <Link href="/signup" className="underline">
-                    Sign up
+                Already have an account?{' '}
+                <Link href="/login" className="underline">
+                    Sign in
                 </Link>
             </div>
           </CardFooter>

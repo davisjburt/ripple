@@ -3,8 +3,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { AppLayout } from '@/components/app-layout';
 import { Toaster } from '@/components/ui/toaster';
-import { usePathname } from 'next/navigation';
 import React from 'react';
+import { AuthProvider } from '@/hooks/use-auth';
+import { usePathname } from 'next/navigation';
 
 export const metadata: Metadata = {
   title: 'Ripple: Video Calling',
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
 function AppContent({ children }: { children: React.ReactNode }) {
   'use client';
   const pathname = usePathname();
-  const isAuthPage = pathname === '/login';
+  const isAuthPage = pathname === '/login' || pathname === '/signup';
 
   return (
     <>
@@ -43,7 +44,9 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body className="font-body antialiased" suppressHydrationWarning>
-        <AppContent>{children}</AppContent>
+        <AuthProvider>
+            <AppContent>{children}</AppContent>
+        </AuthProvider>
       </body>
     </html>
   );
