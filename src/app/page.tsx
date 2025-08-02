@@ -33,6 +33,7 @@ const meetings = [
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const firstName = user?.displayName?.split(' ')[0];
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-8">
@@ -41,7 +42,7 @@ export default function Dashboard() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome back, {user?.displayName || 'User'}</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome back, {firstName || 'User'}</h1>
         <p className="text-muted-foreground">Ready to connect? Here’s what’s on your plate today.</p>
       </motion.div>
 
