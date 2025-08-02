@@ -14,6 +14,7 @@ export const metadata: Metadata = {
 
 function AppContent({ children }: { children: React.ReactNode }) {
   'use client';
+
   const pathname = usePathname();
   const isAuthPage = pathname === '/login' || pathname === '/signup';
 
