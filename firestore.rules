@@ -4,49 +4,44 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if the user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Users can be read by anyone authenticated, but only created/updated by themselves.
-    // This allows for searching for users by email.
+    // Users
+    // - Anyone can create a user document (needed for sign-up).
+    // - Authenticated users can read other user profiles (to find contacts).
+    // - Users can only update or delete their own profile.
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && request.auth.uid == userId;
-
-      // Contacts are a sub-collection, only readable/writable by the parent user.
-      match /contacts/{contactId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Friend requests
+    // Contacts (sub-collection of users)
+    // - A user can only manage their own contacts list.
+    match /users/{userId}/contacts/{contactId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Friend Requests
+    // - Authenticated users can create requests.
+    // - You can only read requests sent to you.
+    // - You can only accept/decline requests sent to you.
+    // - The sender can cancel their own request.
     match /friendRequests/{requestId} {
-      // Anyone can create a request (send one).
-      allow create: if isAuthenticated();
-      // You can read/update a request if you are the sender or receiver.
-      allow read, update: if isAuthenticated() && (request.auth.uid == resource.data.from || request.auth.uid == resource.data.to);
-      // Allow listing of requests sent TO the current user.
-      allow list: if isAuthenticated() && request.query.where.to == request.auth.uid;
+      allow create: if request.auth != null;
+      allow read, update: if request.auth != null && (request.auth.uid == resource.data.to || request.auth.uid == resource.data.from);
+      allow list: if request.auth != null && request.query.where.to == request.auth.uid;
     }
 
     // Chats
+    // - You can only read/write messages in a chat if you are a participant.
+    // - You can only list chats where you are a participant.
     match /chats/{chatId} {
-        // A user can list chats if their UID is in the 'participants' array.
-        // This is the key rule to fix the snapshot listener error.
-        allow list: if isAuthenticated() && request.query.where.participants.includes(request.auth.uid);
+        allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
         
-        // A user can get, update, or delete a chat document if they are a participant.
-        allow read, update, delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
-        
-        // Anyone authenticated can create a new chat room.
-        allow create: if isAuthenticated();
+        // This rule allows the query in src/app/chat/page.tsx
+        allow list: if request.auth != null && request.query.where.participants.includes(request.auth.uid);
 
-        // Messages sub-collection
         match /messages/{messageId} {
-            // A user can read/write messages in a chat if they are a participant of the parent chat.
-            allow read, write: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+            allow read, write: if request.auth != null && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
         }
     }
   }
