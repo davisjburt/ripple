@@ -1,34 +1,39 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can be read by any authenticated user, but only created if the user ID matches.
-    // Writes are not allowed, profiles are updated via specific functions if needed.
+    // Users can be read by any authenticated user, but only created or updated by the user themselves.
+    // This allows users to look up other users by email to send friend requests.
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow create: if request.auth.uid == userId;
-      allow update, delete: if false; // Disallow direct updates/deletes for now
+      allow create, update: if request.auth.uid == userId;
 
-      // Users can only read/write their own contacts list.
+      // Contacts are private to each user.
       match /contacts/{contactId} {
-        allow read, list, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if request.auth.uid == userId;
       }
     }
 
-    // Friend requests can be created by any authenticated user.
-    // They can only be read if the request is addressed to the current user.
-    // They can only be updated/deleted by the recipient of the request.
+    // Friend requests have specific rules for creation and access.
     match /friendRequests/{requestId} {
-      allow create: if request.auth != null;
-      allow list, read: if request.auth != null && resource.data.to == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.to == request.auth.uid;
+      // Allow creation if the sender is the authenticated user.
+      allow create: if request.auth.uid == request.resource.data.from;
+
+      // Allow reading only if the user is the sender or the receiver.
+      allow read: if request.auth.uid == resource.data.from || request.auth.uid == resource.data.to;
+
+      // Allow updating (accepting/declining) only by the receiver.
+      allow update: if request.auth.uid == resource.data.to;
+
+      // Allow deleting only by the sender or receiver.
+      allow delete: if request.auth.uid == resource.data.from || request.auth.uid == resource.data.to;
     }
 
-    // Chat messages can be read or written only by the two participants in the chat.
-    // The chat document ID must be in the format 'uid1_uid2' with UIDs sorted alphabetically.
-    match /chats/{chatRoomId}/{messageId} {
-      allow read, write: if request.auth != null && request.auth.uid in chatRoomId.split('_');
+    // Chat messages can only be accessed by the participants.
+    match /chats/{chatRoomId}/messages/{messageId} {
+      allow read, write: if request.auth.uid in chatRoomId.split('_');
     }
   }
 }
