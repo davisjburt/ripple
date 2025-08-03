@@ -3,37 +3,55 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
 
-    // Users can be read by any authenticated user for finding contacts.
-    // Users can only write to their own document.
+    function isUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Users Collection
+    // - Allow signed-in users to read the list of users for adding contacts.
+    // - Users can only create their own user doc.
+    // - Users can only update their own doc.
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth.uid == userId;
+      allow read: if isSignedIn();
+      allow create: if isUser(userId);
+      allow update: if isUser(userId);
+      
+      // Contacts Sub-collection
+      // - A user can only manage their own contacts list.
+      match /contacts/{contactId} {
+        allow read, write: if isUser(userId);
+      }
     }
 
-    // A user can only access their own contacts sub-collection.
-    match /users/{userId}/contacts/{contactId} {
-       allow read, write: if request.auth.uid == userId;
-    }
-
-    // Friend requests can be created by any authenticated user.
-    // They can only be read if the user is the recipient of the request.
-    // They can be updated (accepted/declined) by the recipient.
+    // Friend Requests Collection
+    // - Users can create requests.
+    // - Users can read requests sent to or from them.
+    // - Users can update requests sent to them (to accept/decline).
     match /friendRequests/{requestId} {
-      allow create: if request.auth.uid == request.resource.data.from;
-      allow read: if request.auth.uid == resource.data.to;
-      allow update: if request.auth.uid == resource.data.to;
+       allow create: if isSignedIn() && request.resource.data.from == request.auth.uid;
+       allow read: if isSignedIn() && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
+       allow update: if isSignedIn() && resource.data.to == request.auth.uid;
+       allow delete: if false; // Or specific logic if needed
     }
 
-    // A user can list chats they are a participant in.
-    // A user can read/write to a chat document only if they are a participant.
+    // Chats Collection
+    // - Users can only list/read chats they are a part of.
+    // - Users can only create chats where they are a participant.
     match /chats/{chatId} {
-      allow list: if request.auth.uid in request.query.where.value;
-      allow read, write: if request.auth.uid in resource.data.participants;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow read, create: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
 
-      // Messages can be read or written only by participants of the parent chat.
+      // Messages Sub-collection
+      // - Participants of a chat can read and write messages.
       match /messages/{messageId} {
-        allow read, write: if get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+        allow read, write: if isSignedIn() && get(/databases/$(database)/documents/chats/$(chatId)).data.participants[0] == request.auth.uid || 
+                              get(/databases/$(database)/documents/chats/$(chatId)).data.participants[1] == request.auth.uid;
       }
     }
   }
