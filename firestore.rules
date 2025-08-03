@@ -1,51 +1,40 @@
-rules_version = '2';
 
+rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if the user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Users can be read by anyone authenticated, but only created/updated by themselves.
-    // This allows searching for users by email.
+    // Users can read/write their own profile.
+    // Users can be looked up by email for friend requests.
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && request.auth.uid == userId;
-
-      // Contacts are private to each user.
-      // A user can only read or write to their own contacts sub-collection.
-      match /contacts/{contactId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow list: if request.auth != null;
     }
 
-    // Friend requests
-    match /friendRequests/{requestId} {
-      // Allow read if the user is either the sender or the receiver of the request.
-      allow read: if isAuthenticated() && (request.auth.uid == resource.data.from || request.auth.uid == resource.data.to);
-      
-      // Allow create if the user is the sender.
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.from;
+    // Users can only read/write to their own contacts sub-collection.
+    match /users/{userId}/contacts/{contactId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
 
-      // Allow update if the user is the receiver (e.g., to accept/decline the request).
-      allow update: if isAuthenticated() && request.auth.uid == resource.data.to;
+    // Users can create friend requests.
+    // Users can read/update requests sent to or from them.
+    // Users can query for requests sent TO them.
+    match /friendRequests/{requestId} {
+      allow create: if request.auth != null && request.resource.data.from == request.auth.uid;
+      allow read, update: if request.auth != null && (request.auth.uid == resource.data.from || request.auth.uid == resource.data.to);
     }
     
-    // Chats
+    // Users can only list/read/write chats they are a participant in.
+    // This also allows ordering the chat list by the last message timestamp.
     match /chats/{chatId} {
-      // Allow read/write to a chat document (and its messages) ONLY if the user is a participant.
-      allow get, write: if isAuthenticated() && request.auth.uid in resource.data.participants;
-      
-      // THIS IS THE CRITICAL RULE FIX:
-      // Allow a user to LIST chats, but ONLY if they are querying for chats they are a part of.
-      // This rule specifically secures the `where('participants', 'array-contains', user.uid)` query.
-      allow list: if isAuthenticated() && request.query.where.array_contains[0] == request.auth.uid;
-
-      match /messages/{messageId} {
-        allow read, write: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
-      }
+       allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
+       
+       // This is the critical rule that allows fetching the chat list.
+       allow list: if request.auth != null && request.query.where.path == "participants" && request.query.where.op == "array-contains" && request.query.where.value == request.auth.uid;
+       
+       // Users can read/write messages in chats they are a part of.
+       match /messages/{messageId} {
+         allow read, write: if request.auth != null && get(/databases/$(database)/documents/chats/$(chatId)).data.participants[0] == request.auth.uid || get(/databases/$(database)/documents/chats/$(chatId)).data.participants[1] == request.auth.uid;
+       }
     }
   }
 }
