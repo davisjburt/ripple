@@ -8,6 +8,9 @@ import { Toaster } from '@/components/ui/toaster';
 import React from 'react';
 import { usePathname } from 'next/navigation';
 import { AuthProvider } from '@/hooks/use-auth';
+import { Inter } from 'next/font/google';
+
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 
 function AppContent({ children }: { children: React.ReactNode }) {
@@ -52,7 +55,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
-      <body className="font-body antialiased" suppressHydrationWarning>
+      <body className={`${inter.variable} font-body antialiased`} suppressHydrationWarning>
         <AppContent>{children}</AppContent>
       </body>
     </html>
