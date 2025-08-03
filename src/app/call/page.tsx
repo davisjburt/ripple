@@ -10,9 +10,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useSearchParams } from 'next/navigation';
-import { useP2P } from '@/hooks/use-p2p';
 import { useAuth } from '@/hooks/use-auth';
 import { Spinner } from '@/components/ui/spinner';
+import { io, Socket } from 'socket.io-client';
+import Peer from 'simple-peer';
+
 
 interface Participant {
   id: string;
@@ -49,8 +51,12 @@ export default function CallPage() {
     const { user } = useAuth();
     const sessionId = searchParams.get('id') || 'default-session';
     const contactName = searchParams.get('contactName');
+
+    const [peers, setPeers] = useState<Record<string, Participant>>({});
+    const socketRef = useRef<Socket | null>(null);
+    const peersRef = useRef<Record<string, { peer: Peer.Instance; name: string }>>({});
+    const [isConnected, setIsConnected] = useState(false);
     
-    const { peers, isConnected } = useP2P(sessionId, localStream);
     const participants = Object.values(peers);
 
     const [callTitle, setCallTitle] = useState(
@@ -62,13 +68,12 @@ export default function CallPage() {
         const otherParticipantNames = participants.map(p => p.name).join(', ');
         setCallTitle(`Call with ${otherParticipantNames}`);
       } else if (contactName) {
-        // If you start the call, it says "Calling...". If you answer, it shows who you're calling.
-        const isAnswering = participants.length === 0;
-        setCallTitle(isAnswering ? `Call with ${contactName}`: `Calling ${contactName}...`);
+        const isInitiator = !searchParams.has('answered');
+        setCallTitle(isInitiator ? `Calling ${contactName}...` : `Call with ${contactName}`);
       } else {
         setCallTitle('Waiting for others to join...');
       }
-    }, [participants, contactName]);
+    }, [participants, contactName, searchParams]);
     
 
     useEffect(() => {
@@ -108,21 +113,137 @@ export default function CallPage() {
         return () => {
           localStream?.getTracks().forEach(track => track.stop());
         }
-      }, [toast]);
+    }, [toast]);
     
-      useEffect(() => {
-        if (localStream) {
-            localStream.getVideoTracks().forEach(track => {
-                track.enabled = isCameraOn;
-            });
-             localStream.getAudioTracks().forEach(track => {
-                track.enabled = isMicOn;
-            });
-        }
+    useEffect(() => {
+      if (localStream) {
+          localStream.getVideoTracks().forEach(track => {
+              track.enabled = isCameraOn;
+          });
+           localStream.getAudioTracks().forEach(track => {
+              track.enabled = isMicOn;
+          });
+      }
     }, [isCameraOn, isMicOn, localStream]);
 
-    const gridColsClass = participants.length <= 1 ? 'grid-cols-1' : (participants.length <= 4 ? 'grid-cols-2' : 'grid-cols-3');
-    const gridRowsClass = participants.length === 0 ? 'grid-rows-1' : `grid-rows-${Math.ceil((participants.length + 1) / (participants.length <= 1 ? 1 : (participants.length <= 4 ? 2 : 3)))}`;
+    const createPeer = (socketIDToSignal: string, name: string, initiator: boolean) => {
+        if (!localStream || !socketRef.current) return;
+    
+        const peer = new Peer({
+          initiator,
+          trickle: true,
+          stream: localStream,
+        });
+    
+        peer.on('signal', (data) => {
+          socketRef.current?.emit('sending signal', {
+            userToSignal: socketIDToSignal,
+            callerID: socketRef.current?.id,
+            signal: data,
+            name: user?.displayName || 'Anonymous',
+          });
+        });
+    
+        peer.on('stream', (stream) => {
+           setPeers(prev => ({
+            ...prev,
+            [socketIDToSignal]: { id: socketIDToSignal, name: name, stream: stream },
+          }));
+        });
+        
+        peer.on('connect', () => console.log('peer connected', socketIDToSignal));
+        peer.on('close', () => {
+          console.log('peer closed', socketIDToSignal);
+          delete peersRef.current[socketIDToSignal];
+          setPeers(prev => {
+            const newPeers = {...prev};
+            delete newPeers[socketIDToSignal];
+            return newPeers;
+          });
+        });
+        peer.on('error', (err) => {
+          console.error('peer error', socketIDToSignal, err);
+        });
+    
+        peersRef.current[socketIDToSignal] = { peer, name };
+        return peer;
+      };
+
+    useEffect(() => {
+        if (!user || !localStream) return;
+    
+        socketRef.current = io('http://localhost:3001');
+    
+        setIsConnected(false);
+    
+        socketRef.current.on('connect', () => {
+            console.log('Socket connected:', socketRef.current?.id);
+            setIsConnected(true);
+            toast({ title: "Connected", description: "Ready to join the call." });
+            socketRef.current?.emit('join room', sessionId, user.displayName);
+        });
+        
+        socketRef.current.on('connect_error', (err) => {
+          console.error('Socket connection error:', err);
+           toast({ title: "Connection Failed", variant: 'destructive', description: "Could not connect to the signaling server." });
+        });
+    
+    
+        socketRef.current.on('all users', (users: { id: string; name: string }[]) => {
+          console.log('got all users', users);
+          users.forEach(u => {
+            if (socketRef.current?.id && u.id !== socketRef.current.id) {
+                createPeer(u.id, u.name, true);
+            }
+          });
+        });
+    
+        socketRef.current.on('user joined', (payload) => {
+          toast({ title: 'User Joined', description: `${payload.name} joined the call.` });
+          const peer = createPeer(payload.callerID, payload.name, false);
+          if(peer && socketRef.current) {
+            peersRef.current[payload.callerID] = { peer, name: payload.name };
+            peer.signal(payload.signal);
+          }
+        });
+    
+        socketRef.current.on('receiving returned signal', (payload) => {
+            const item = peersRef.current[payload.id];
+            if(item) {
+            item.peer.signal(payload.signal);
+            }
+        });
+        
+        socketRef.current.on('user left', (id) => {
+          const item = peersRef.current[id];
+          if (item) {
+            toast({ title: 'User Left', description: `${item.name} left the call.`});
+            item.peer.destroy();
+          }
+          delete peersRef.current[id];
+          setPeers(prev => {
+            const newPeers = {...prev};
+            delete newPeers[id];
+            return newPeers;
+          });
+        });
+        
+        socketRef.current.on('disconnect', () => {
+            setIsConnected(false);
+            toast({ title: "Disconnected", variant: 'destructive', description: "You have been disconnected from the call." });
+        })
+    
+    
+        return () => {
+          socketRef.current?.disconnect();
+          Object.values(peersRef.current).forEach(({peer}) => peer.destroy());
+          setPeers({});
+          peersRef.current = {};
+        };
+      }, [sessionId, user, localStream, toast]);
+
+    const gridColsClass = participants.length < 1 ? 'grid-cols-1' : (participants.length < 4 ? 'grid-cols-2' : 'grid-cols-3');
+    const gridRowsClass = participants.length === 0 ? 'grid-rows-1' : `grid-rows-${Math.ceil((participants.length + 1) / (participants.length < 1 ? 1 : (participants.length < 4 ? 2 : 3)))}`;
 
   return (
     <div className="flex h-screen max-h-screen bg-black text-white overflow-hidden">
