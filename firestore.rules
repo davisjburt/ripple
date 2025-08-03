@@ -1,77 +1,59 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    //
-    // Users Collection
-    // Users can read their own profile, and other users can only read non-sensitive info.
-    // Users can only create their own user document and can only update their own data.
-    //
+
+    // Users can read their own user document and public data of others.
+    // They can only create their own user document, and update their own.
     match /users/{userId} {
-      allow get: if request.auth.uid != null;
-      allow list: if request.auth.uid != null;
-      allow create: if request.auth.uid == userId;
-      allow update: if request.auth.uid == userId;
+      allow read;
+      allow create, update: if request.auth.uid == userId;
 
-      // Contacts subcollection
-      // A user can only read/write their own contacts list.
+      // A user can list their own contacts.
       match /contacts/{contactId} {
-        allow get: if request.auth.uid == userId;
         allow list: if request.auth.uid == userId;
-        allow create, update, delete: if request.auth.uid == userId;
       }
     }
 
-    //
-    // Friend Requests Collection
-    // Users can create requests.
-    // Users can only read requests sent to them ('list' for queries, 'get' for direct access).
-    // Users can only update/delete requests they sent or received.
-    //
+    // Friend requests can be created by any authenticated user.
+    // They can only be read/listed by the intended recipient.
+    // They can only be updated by the recipient.
     match /friendRequests/{requestId} {
-      allow create: if request.auth.uid != null;
-      allow get: if request.auth.uid == resource.data.to || request.auth.uid == resource.data.from;
-      allow list: if request.auth.uid == request.query.where.to;
-      allow update, delete: if request.auth.uid == resource.data.to || request.auth.uid == resource.data.from;
+      allow create: if request.auth != null;
+      allow list: if request.auth.uid == request.query.where.to && request.query.where.status == 'pending';
+      allow get, update: if request.auth.uid == resource.data.to;
     }
 
-    //
-    // Chats Collection
-    // A user can only access chats they are a participant in.
-    // This applies to the chat document and its messages subcollection.
-    //
+    // Chats can only be accessed by participants.
     match /chats/{chatId} {
-      allow get, update: if request.auth.uid in resource.data.participants;
-      allow list: if request.auth.uid in request.query.where.participants;
-
+      allow get, list: if request.auth.uid in resource.data.participants;
+      
+      // Messages within a chat can be read by participants and created by participants.
       match /messages/{messageId} {
-        allow read, write: if request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow list, get: if get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+        allow create: if request.auth.uid == request.resource.data.senderId &&
+                       get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
       }
+    }
+
+    // Call invitations can be created by anyone authenticated.
+    // They can only be listed/read by the intended receiver.
+    match /callInvitations/{invitationId} {
+        allow create: if request.auth != null;
+        allow get, update, delete: if request.auth.uid == resource.data.receiverId || request.auth.uid == resource.data.caller.id;
+        allow list: if request.auth.uid == request.query.where.receiverId;
     }
     
-    //
-    // Calls & Call Invitations Collections
-    //
+    // Call documents for WebRTC signaling.
     match /calls/{callId} {
-      // Users can create call documents.
-      allow create: if request.auth.uid != null;
-      // Users can only access call documents if they are a participant.
-      allow read, update, delete: if request.auth.uid in resource.data.participants;
-
-      // The ICE candidates for WebRTC signaling.
-      // Can only be accessed by participants of the parent call document.
-      match /{candidateCollection}/{candidateId} {
-        allow read, write, create, delete: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-      }
-    }
-
-    match /callInvitations/{invitationId} {
-      // Any authenticated user can create an invitation.
-      allow create: if request.auth.uid != null;
-      // Users can only read invitations sent to them. `list` is for the query, `get` is for direct access.
-      allow list: if request.auth.uid == request.query.where.receiverId;
-      allow get, update, delete: if request.auth.uid == resource.data.receiverId || request.auth.uid == resource.data.caller.id;
+        allow get, update: if request.auth.uid in resource.data.participants;
+        allow create: if request.auth != null;
+        allow delete: if request.auth.uid in resource.data.participants;
+        
+        // Candidates can be read/written by participants of the call.
+        match /{collectionId}/{candidateId} {
+            allow read, write: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
+        }
     }
   }
 }
