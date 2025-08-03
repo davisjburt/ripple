@@ -169,21 +169,18 @@ export default function CallPage() {
             const callDocRef = doc(db, 'calls', callId);
 
             peer.on('signal', async (offer) => {
-                // The first signal event for the initiator is the offer.
                 if(offer.type === 'offer') {
                     await updateDoc(callDocRef, { offer: JSON.stringify(offer) });
-
-                    // Now that we've sent the offer, listen for the answer
-                    const unsubscribeAnswer = onSnapshot(callDocRef, (snapshot) => {
-                        const data = snapshot.data();
-                        if (data?.answer && peerRef.current && !peerRef.current.destroyed) {
-                           peerRef.current.signal(JSON.parse(data.answer));
-                           unsubscribeAnswer(); // Stop listening for answer once we have it
-                        }
-                    });
-                    unsubscribes.current.push(unsubscribeAnswer);
                 }
             });
+
+            const unsubscribe = onSnapshot(callDocRef, (snapshot) => {
+                const data = snapshot.data();
+                if (data?.answer) {
+                   peer.signal(JSON.parse(data.answer));
+                }
+            });
+            unsubscribes.current.push(unsubscribe);
             
             setupPeerListeners(peer, callId, true);
         };
@@ -202,10 +199,9 @@ export default function CallPage() {
             peerRef.current = peer;
 
             const offer = JSON.parse(callDocSnap.data().offer);
-            peer.signal(offer); // Signal the offer to get the answer
+            peer.signal(offer);
 
             peer.on('signal', async (answer) => {
-                // The first signal for the receiver is the answer
                 if (answer.type === 'answer') {
                     await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
                 }
