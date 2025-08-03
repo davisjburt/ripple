@@ -40,9 +40,9 @@ export interface FriendRequest {
 
 // Function to add a contact by email (sends a friend request)
 export const addContact = async (fromUserId: string, toUserEmail: string) => {
-    // 1. Find the user to add by their email
+    // 1. Find the user to add by their email (case-insensitive)
     const usersRef = collection(db, 'users');
-    const q = query(usersRef, where("email", "==", toUserEmail));
+    const q = query(usersRef, where("email", "==", toUserEmail.toLowerCase()));
     const querySnapshot = await getDocs(q);
 
     if (querySnapshot.empty) {
@@ -70,8 +70,15 @@ export const addContact = async (fromUserId: string, toUserEmail: string) => {
     );
     const existingRequestSnapshot = await getDocs(existingRequestQuery);
     if (!existingRequestSnapshot.empty) {
-        return { success: false, message: "A friend request already exists between you and this user." };
+        const existingRequest = existingRequestSnapshot.docs[0].data();
+        if (existingRequest.status === 'pending') {
+            return { success: false, message: "A friend request is already pending." };
+        }
+         if (existingRequest.status === 'accepted') {
+            return { success: false, message: "This user is already a contact." };
+        }
     }
+
 
     // 3. Create a new friend request
     await addDoc(requestsRef, {
@@ -125,8 +132,9 @@ export const handleFriendRequest = async (requestId: string, accept: boolean) =>
         throw new Error("One or both users not found.");
     }
     
-    const fromUserData = fromUserDoc.data();
-    const toUserData = toUserDoc.data();
+    const fromUserData = { ...fromUserDoc.data(), id: fromUserDoc.id };
+    const toUserData = { ...toUserDoc.data(), id: toUserDoc.id };
+
 
     // Use a batch write to perform multiple operations atomically
     const batch = writeBatch(db);

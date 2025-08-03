@@ -45,7 +45,7 @@ export default function SignupPage() {
             await setDoc(doc(db, "users", userCredential.user.uid), {
                 uid: userCredential.user.uid,
                 displayName: name,
-                email: email,
+                email: email.toLowerCase(),
                 photoURL: `https://placehold.co/100x100/E9E9F0/333?text=${name.charAt(0)}`
             });
 
