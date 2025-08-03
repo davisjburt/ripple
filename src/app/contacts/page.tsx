@@ -118,7 +118,7 @@ export default function ContactsPage() {
         if (!callerDoc.exists()) {
             throw new Error("Could not find your user profile.");
         }
-        const caller = { id: callerDoc.id, ...callerDoc.data() } as User;
+        const caller = { uid: callerDoc.id, ...callerDoc.data() } as User;
       
         const { callId } = await startCall(caller, contact);
         router.push(`/call?id=${callId}&contactName=${encodeURIComponent(contact.displayName)}`);
