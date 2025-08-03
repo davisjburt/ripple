@@ -3,44 +3,48 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-  
-    // USERS
-    // Users can read their own profile, and can only update their own profile.
-    // Users can be read by others only if they are contacts.
-    match /users/{userId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.uid;
-      allow update: if request.auth != null && request.auth.uid == userId;
-      
-      // CONTACTS Subcollection
-      // Users can read/write to their own contacts list.
-      match /contacts/{contactId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-    }
-    
-    // FRIEND REQUESTS
-    // Users can create friend requests.
-    // Users can read/update requests sent to them.
-    match /friendRequests/{requestId} {
-      allow create: if request.auth != null;
-      allow read, update: if request.auth != null && request.resource.data.to == request.auth.uid;
-      // Allow sender to read the request status as well
-      allow read: if request.auth != null && request.resource.data.from == request.auth.uid;
-    }
-    
-    // CHATS
-    // Users can query for chats they are a part of.
-    // Users can read/write to chats they are a part of.
-    match /chats/{chatId} {
-      allow list: if request.auth != null && request.auth.uid in resource.data.participants;
-      allow get, update, write: if request.auth != null && request.auth.uid in resource.data.participants;
 
-      // MESSAGES Subcollection
-      // Users can read/write messages in chats they are a part of.
-      match /messages/{messageId} {
-        allow read, write, create: if request.auth != null && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
-      }
+    // Helper function to check if a user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if the user is the owner of the document
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Users can read their own profile, and any authenticated user can view others' basic info.
+    // Users can only create and update their own profile.
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(userId);
+    }
+    
+    // Users can only manage their own contacts subcollection
+    match /users/{userId}/contacts/{contactId} {
+        allow read, write, delete: if isOwner(userId);
+    }
+    
+    // Friend Requests
+    match /friendRequests/{requestId} {
+        // Allow creating a request if authenticated
+        allow create: if isAuthenticated();
+        // Allow reading if you are the sender or receiver
+        allow read: if isAuthenticated() && (request.auth.uid == resource.data.from || request.auth.uid == resource.data.to);
+        // Allow updating (accept/decline) only by the receiver
+        allow update: if isAuthenticated() && request.auth.uid == resource.data.to;
+    }
+
+    // Chats
+    match /chats/{chatId} {
+        // Allow reading/listing of chat rooms if the user is a participant
+        allow get, list: if isAuthenticated() && request.auth.uid in resource.data.participants;
+        
+        // Allow users to read messages only if they are a participant of the chat
+        match /messages/{messageId} {
+            allow read, create: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+        }
     }
   }
 }
