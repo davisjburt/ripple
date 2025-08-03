@@ -1,71 +1,37 @@
 
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper function to check if a user is authenticated
-    function isSignedIn() {
-      return request.auth != null;
-    }
 
-    // Helper function to get a user document
-    function getUser(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data;
-    }
-
-    // Users collection
+    // Users can read public info on any user profile.
+    // A user can only update their own profile.
+    // A user can create their own profile document.
     match /users/{userId} {
-      // Anyone can create their own user document during signup
-      allow create: if isSignedIn();
-      
-      // Users can only read their own document
-      // Users can be read by others if they are searching by email for a friend request
-      allow read: if isSignedIn() && (
-        request.auth.uid == userId || 
-        (resource.data.email == request.query.where.email)
-      );
-
-      // Users can only update their own document
-      allow update: if isSignedIn() && request.auth.uid == userId;
-
-      // Disallow deleting user documents
-      allow delete: if false;
-
-      // Contacts subcollection
-      match /contacts/{contactId} {
-         // Only the user can manage their own contacts
-        allow read, write: if isSignedIn() && request.auth.uid == userId;
-      }
+      allow read: if request.auth != null;
+      allow create, update: if request.auth.uid == userId;
     }
 
-    // Friend Requests collection
+    // Users can only manage their own contacts subcollection.
+    match /users/{userId}/contacts/{contactId} {
+      allow read, write, delete: if request.auth.uid == userId;
+    }
+
+    // Friend requests can be created by any authenticated user.
+    // They can only be read by the sender or receiver.
+    // They can only be updated (accepted/declined) by the receiver.
     match /friendRequests/{requestId} {
-      // Authenticated users can create friend requests
-      allow create: if isSignedIn();
-      
-      // Users can read requests sent to them
-      allow read: if isSignedIn() && resource.data.to == request.auth.uid;
-      
-      // Users can update requests sent to them (to accept/decline)
-      allow update: if isSignedIn() && resource.data.to == request.auth.uid;
-      
-      allow delete: if false;
+      allow create: if request.auth != null;
+      allow read, update: if request.auth.uid == resource.data.to || request.auth.uid == resource.data.from;
     }
 
-    // Chats collection
+    // Chat documents can be read or written to by participants only.
     match /chats/{chatId} {
-      // Allow reading/querying a list of chats if the user is a participant
-      allow list: if isSignedIn() && request.auth.uid in resource.data.participants;
-      
-      // Allow reading a single chat document if the user is a participant
-      allow get: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      allow get, list, create, update, delete: if request.auth.uid in resource.data.participants;
+    }
 
-      // Messages subcollection
-      match /messages/{messageId} {
-        // Allow reading and writing messages only if the user is a participant of the parent chat room
-        allow read, write: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
-      }
+    // Messages can be read or written by chat participants.
+    match /chats/{chatId}/messages/{messageId} {
+      allow read, write: if get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
     }
   }
 }
