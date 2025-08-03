@@ -1,33 +1,46 @@
 
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-
+    
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow list: if request.auth != null;
+      allow read: if request.auth != null;
+      allow create: if request.auth.uid == userId;
+      allow update: if request.auth.uid == userId;
 
+      // A user can read and write to their own contacts subcollection.
       match /contacts/{contactId} {
-        // Allow a user to manage their own contact list
-        // And allow another user to add themselves to this list
-        // if they are accepting a friend request.
-        allow read, write: if request.auth != null && 
-                           (request.auth.uid == userId || request.auth.uid == contactId);
+        allow read, write: if request.auth.uid == userId;
       }
     }
-    
+
+    // Rules for friend requests
     match /friendRequests/{requestId} {
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.from;
-      allow read: if request.auth != null && (request.auth.uid == resource.data.to || request.auth.uid == resource.data.from);
-      allow update: if request.auth != null && request.auth.uid == resource.data.to;
-      allow list: if request.auth != null;
+      // Allow users to create requests if they are the sender.
+      allow create: if request.auth != null && request.resource.data.from == request.auth.uid;
+      
+      // Allow users to read a request if they are the sender or receiver.
+      allow read: if request.auth != null && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
+
+      // Allow the recipient to update the status of the request (accept/decline).
+      allow update: if request.auth != null && resource.data.to == request.auth.uid;
+      
+      // Allow listing of requests where the user is the recipient.
+      allow list: if request.auth != null && request.query.where.to == request.auth.uid;
     }
 
-    match /chats/{chatId}/{messageId} {
-      // Users can only read/write messages in chats they are part of
-      // ChatId is formatted as 'userId1_userId2'
-      allow read, write: if request.auth != null && request.auth.uid in chatId.split('_');
+    // Rules for chats
+    match /chats/{chatRoomId} {
+        // Allow read/write access to the chat room document if the user is part of the chat
+        allow read, write: if request.auth != null && chatRoomId.split('_').includes(request.auth.uid);
+
+        match /messages/{messageId} {
+            // Allow read access to messages if the user is part of the chat.
+            allow read: if request.auth != null && chatRoomId.split('_').includes(request.auth.uid);
+            
+            // Allow a user to write a message if they are the sender and part of the chat.
+            allow create: if request.auth != null && request.resource.data.senderId == request.auth.uid && chatRoomId.split('_').includes(request.auth.uid);
+        }
     }
   }
 }
