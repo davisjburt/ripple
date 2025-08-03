@@ -11,12 +11,12 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from './ui/button';
 import { Phone, PhoneOff } from 'lucide-react';
-import { Call, answerCall, declineCall } from '@/lib/firebase';
+import { CallInvitation, answerCall, declineCall } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
 interface IncomingCallDialogProps {
-  call: Call;
+  call: CallInvitation;
   onClose: () => void;
 }
 
@@ -28,7 +28,8 @@ export function IncomingCallDialog({ call, onClose }: IncomingCallDialogProps) {
     try {
       await answerCall(call.id);
       onClose();
-      router.push(`/call?id=${call.sessionId}&contactName=${encodeURIComponent(call.caller.name)}&answered=true`);
+      // Navigate to the call page, passing the *call document id*
+      router.push(`/call?id=${call.callId}&contactName=${encodeURIComponent(call.caller.name)}&answered=true`);
     } catch (error) {
       console.error('Failed to answer call:', error);
       toast({

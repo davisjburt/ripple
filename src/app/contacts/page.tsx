@@ -122,8 +122,8 @@ export default function ContactsPage() {
         email: user.email || '',
         photoURL: user.photoURL || '',
       };
-      const { sessionId } = await startCall(caller, contact);
-      router.push(`/call?id=${sessionId}&contactName=${encodeURIComponent(contact.displayName)}`);
+      const { callId } = await startCall(caller, contact);
+      router.push(`/call?id=${callId}&contactName=${encodeURIComponent(contact.displayName)}`);
     } catch (error) {
       console.error("Failed to start call:", error);
       toast({

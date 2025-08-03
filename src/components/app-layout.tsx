@@ -15,13 +15,13 @@ import { UserNav } from '@/components/user-nav';
 import { Video } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
-import { Call, onIncomingCall } from '@/lib/firebase';
+import { CallInvitation, onIncomingCall } from '@/lib/firebase';
 import { IncomingCallDialog } from './incoming-call-dialog';
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [defaultOpen, setDefaultOpen] = React.useState(true);
   const { user } = useAuth();
-  const [incomingCall, setIncomingCall] = useState<Call | null>(null);
+  const [incomingCall, setIncomingCall] = useState<CallInvitation | null>(null);
 
   useEffect(() => {
     const savedState = document.cookie.match(/sidebar_state=([^;]+)/);

@@ -2,195 +2,269 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, UserPlus, VideoOff, MicOff } from 'lucide-react';
+import { ChevronLeft, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import { VideoControls } from '@/components/video-controls';
 import { ChatPanel } from '@/components/chat-panel';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Spinner } from '@/components/ui/spinner';
-
-// Simplified Participant interface
-interface Participant {
-  id: string;
-  name: string;
-  // stream property removed as we are not handling live streams for now
-}
-
-function VideoPlaceholder({ name }: { name: string }) {
-  return (
-    <div className="relative aspect-video rounded-lg overflow-hidden bg-black flex items-center justify-center border border-dashed border-gray-700">
-      <div className="text-center text-muted-foreground">
-        <VideoOff className="h-12 w-12 mx-auto mb-2" />
-        <p>{name}</p>
-      </div>
-    </div>
-  );
-}
-
+import { db } from '@/lib/firebase';
+import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc } from 'firebase/firestore';
+import Peer from 'simple-peer';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function CallPage() {
-    const localVideoRef = useRef<HTMLVideoElement>(null);
-    const [hasCameraPermission, setHasCameraPermission] = useState(false);
-    const [isCameraOn, setIsCameraOn] = useState(false);
-    const [isMicOn, setIsMicOn] = useState(false);
+    const { user } = useAuth();
     const { toast } = useToast();
     const searchParams = useSearchParams();
-    const { user } = useAuth();
-    const sessionId = searchParams.get('id') || 'default-session';
-    const contactName = searchParams.get('contactName');
 
-    const [participants, setParticipants] = useState<Participant[]>([]);
-    const [callTitle, setCallTitle] = useState(
-      contactName ? `Call with ${contactName}` : 'Project Phoenix Kick-off'
-    );
-     const [isConnecting, setIsConnecting] = useState(true);
+    const [isCameraOn, setIsCameraOn] = useState(true);
+    const [isMicOn, setIsMicOn] = useState(true);
+    const [hasCameraPermission, setHasCameraPermission] = useState(true);
 
-    // Effect to check camera permissions
-    useEffect(() => {
-        const getCameraPermission = async () => {
-          try {
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                const stream = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
-                // We got permission, but we'll stop the tracks immediately
-                // to not use the camera until the user explicitly turns it on.
-                stream.getTracks().forEach(track => track.stop());
-                setHasCameraPermission(true);
-            } else {
-                 toast({
-                    variant: 'destructive',
-                    title: 'Media Devices not supported',
-                    description: 'Your browser does not support camera access.',
-                });
-                setHasCameraPermission(false);
-            }
-          } catch (error) {
-            console.error('Error accessing camera:', error);
-            setHasCameraPermission(false);
-            toast({
-              variant: 'destructive',
-              title: 'Camera Access Denied',
-              description: 'Please enable camera permissions in your browser settings to use this app.',
-            });
-          }
-        };
+    const [callId, setCallId] = useState<string | null>(searchParams.get('id'));
+    const [contactName, setContactName] = useState(searchParams.get('contactName'));
+    const [isInitiator, setIsInitiator] = useState(false);
 
-        getCameraPermission();
-    }, [toast]);
+    const [callStatus, setCallStatus] = useState<'connecting' | 'connected' | 'ended'>('connecting');
     
-    // Simulate connection for demo purposes
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setIsConnecting(false);
-            toast({
-                title: "Call Connected (Simulated)",
-                description: "This is a placeholder UI. Video functionality is not yet implemented.",
-            });
-             if (contactName) {
-                setParticipants([{ id: '2', name: contactName }]);
-             }
-        }, 3000);
+    const localVideoRef = useRef<HTMLVideoElement>(null);
+    const remoteVideoRef = useRef<HTMLVideoElement>(null);
+    const peerRef = useRef<Peer.Instance | null>(null);
+    const localStreamRef = useRef<MediaStream | null>(null);
 
-        return () => clearTimeout(timer);
-    }, [toast, contactName]);
-
-     // Update title based on participants
-    useEffect(() => {
-        if (participants.length > 0) {
-            const otherParticipantNames = participants.map(p => p.name).join(', ');
-            setCallTitle(`Call with ${otherParticipantNames}`);
-        } else if (isConnecting) {
-             setCallTitle(contactName ? `Calling ${contactName}...` : `Connecting...`);
+    const cleanup = useCallback(() => {
+        if (peerRef.current) {
+            peerRef.current.destroy();
+            peerRef.current = null;
         }
-        else {
-            setCallTitle('Waiting for others to join...');
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(track => track.stop());
+            localStreamRef.current = null;
         }
-    }, [participants, isConnecting, contactName]);
+        if (localVideoRef.current) localVideoRef.current.srcObject = null;
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+        setCallStatus('ended');
+    }, []);
 
+    const startCall = useCallback(async (stream: MediaStream, callDocId: string) => {
+        const peer = new Peer({ initiator: true, trickle: false, stream });
+        peerRef.current = peer;
 
-    const gridColsClass = participants.length < 1 ? 'grid-cols-1' : (participants.length < 4 ? 'grid-cols-2' : 'grid-cols-3');
-    const gridRowsClass = participants.length === 0 ? 'grid-rows-1' : `grid-rows-${Math.ceil((participants.length + 1) / (participants.length < 1 ? 1 : (participants.length < 4 ? 2 : 3)))}`;
+        peer.on('signal', async (offer) => {
+            const callDoc = doc(db, 'calls', callDocId);
+            await updateDoc(callDoc, { offer: JSON.stringify(offer) });
+        });
 
-  return (
-    <div className="flex h-screen max-h-screen bg-black text-white overflow-hidden">
-      <div className="flex flex-1 flex-col relative">
-        {/* Header */}
-        <header className="absolute top-0 left-0 right-0 z-20 p-4 flex justify-between items-center bg-gradient-to-b from-black/70 to-transparent">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-              <Link href="/">
-                <ChevronLeft />
-              </Link>
-            </Button>
-            <div>
-              <h2 className="font-semibold">{callTitle}</h2>
-              <p className="text-xs text-muted-foreground">Session ID: {sessionId}</p>
-            </div>
-          </div>
-          <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30">
-            <UserPlus className="mr-2 h-4 w-4" />
-            Invite
-          </Button>
-        </header>
+        peer.on('stream', (remoteStream) => {
+            if (remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = remoteStream;
+            }
+            setCallStatus('connected');
+        });
 
-        {/* Main Video Grid */}
-        <main className={`flex-1 grid gap-2 p-4 pt-20 ${gridColsClass} ${gridRowsClass}`}>
-            <div className="relative aspect-video rounded-lg overflow-hidden bg-black flex items-center justify-center">
-                 <video ref={localVideoRef} className={`w-full h-full object-cover ${isCameraOn ? '' : 'hidden'}`} autoPlay muted playsInline />
-                
-                {/* Placeholder when camera is off or permission is denied */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white p-4">
-                    {!hasCameraPermission ? (
-                         <Alert variant="destructive" className="max-w-sm">
-                            <AlertTitle>Camera Access Required</AlertTitle>
-                            <AlertDescription>
-                                Please allow camera access to use this feature.
-                            </AlertDescription>
-                        </Alert>
-                    ) : !isCameraOn ? (
-                        <div className="text-center">
-                            <VideoOff className="h-12 w-12 mx-auto mb-2"/>
-                            <p>Camera is off</p>
-                        </div>
-                    ) : (
-                       <Spinner size="large" />
-                    )}
-                </div>
-                <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded-md text-sm">{user?.displayName || 'You'} (You)</div>
-            </div>
-            
-            {/* Other participants */}
-            {participants.map((p) => (
-                <VideoPlaceholder key={p.id} name={p.name} />
-            ))}
+        onSnapshot(doc(db, 'calls', callDocId), (snapshot) => {
+            const data = snapshot.data();
+            if (data?.answer && !peer.destroyed) {
+                peer.signal(JSON.parse(data.answer));
+            }
+        });
 
-             {/* Connecting Overlay */}
-             {isConnecting && (
-              <div className="absolute inset-0 bg-black/80 flex items-center justify-center flex-col gap-4">
-                <Spinner size="large" />
-                <p className="text-muted-foreground">Connecting to call...</p>
-              </div>
-            )}
-        </main>
+        peer.on('close', cleanup);
+        peer.on('error', (err) => {
+            console.error('Peer error:', err);
+            cleanup();
+        });
+    }, [cleanup]);
+
+    const answerCall = useCallback(async (stream: MediaStream, callDocId: string) => {
+        const callDocSnap = await getDoc(doc(db, 'calls', callDocId));
+        if (!callDocSnap.exists()) {
+            toast({ title: "Call not found", variant: 'destructive' });
+            return;
+        }
+
+        const callData = callDocSnap.data();
+        if (!callData.offer) {
+             toast({ title: "No offer found for this call", variant: 'destructive' });
+             return;
+        }
+
+        const peer = new Peer({ initiator: false, trickle: false, stream });
+        peerRef.current = peer;
         
-        {/* Controls */}
-        <footer className="absolute bottom-0 left-1/2 -translate-x-1/2 z-20 p-4">
-          <VideoControls 
-            isCameraOn={isCameraOn} 
-            onCameraToggle={() => setIsCameraOn(prev => !prev)}
-            isMicOn={isMicOn}
-            onMicToggle={() => setIsMicOn(prev => !prev)}
-            />
-        </footer>
-      </div>
+        peer.signal(JSON.parse(callData.offer));
 
-      {/* Chat Panel */}
-      <aside className="w-96 bg-gray-900/50 backdrop-blur-xl border-l border-white/10 h-full flex flex-col">
-        <ChatPanel sessionId={sessionId} />
-      </aside>
-    </div>
-  );
+        peer.on('signal', async (answer) => {
+            const callDoc = doc(db, 'calls', callDocId);
+            await updateDoc(callDoc, { answer: JSON.stringify(answer) });
+        });
+
+        peer.on('stream', (remoteStream) => {
+            if (remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = remoteStream;
+            }
+            setCallStatus('connected');
+        });
+
+        peer.on('close', cleanup);
+        peer.on('error', (err) => {
+            console.error('Peer error:', err);
+            cleanup();
+        });
+    }, [cleanup, toast]);
+
+
+    useEffect(() => {
+        if (!user || !callId) return;
+
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+                localStreamRef.current = stream;
+                if (localVideoRef.current) {
+                    localVideoRef.current.srcObject = stream;
+                }
+                setHasCameraPermission(true);
+                
+                // Determine if we are initiating or answering
+                const isJoining = searchParams.get('answered') === 'true';
+
+                if (!isJoining) { // Initiator
+                    setIsInitiator(true);
+                    startCall(stream, callId);
+                } else { // Receiver
+                    answerCall(stream, callId);
+                }
+
+                 // Listen for ICE candidates
+                const candidatesCollection = collection(db, 'calls', callId, isInitiator ? 'receiverCandidates' : 'callerCandidates');
+                onSnapshot(candidatesCollection, (snapshot) => {
+                    snapshot.docChanges().forEach(async (change) => {
+                        if (change.type === 'added') {
+                           if(peerRef.current) {
+                             peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                             await deleteDoc(change.doc.ref);
+                           }
+                        }
+                    });
+                });
+
+            }).catch(err => {
+                console.error("Failed to get media", err);
+                setHasCameraPermission(false);
+                toast({
+                    title: "Camera/Mic access denied",
+                    description: "Please allow access to your camera and microphone.",
+                    variant: "destructive"
+                });
+            });
+
+        return () => {
+             // In a real app, you might want to update the call doc status to 'ended'
+            cleanup();
+        }
+    }, [user, callId, startCall, answerCall, toast, searchParams, isInitiator]);
+    
+     useEffect(() => {
+        if (peerRef.current) {
+            peerRef.current.on('signal', async (data) => {
+                if (data.candidate) {
+                    const candidatesCollection = collection(db, 'calls', callId!, isInitiator ? 'callerCandidates' : 'receiverCandidates');
+                    await addDoc(candidatesCollection, { candidate: JSON.stringify(data.candidate) });
+                }
+            });
+        }
+    }, [callId, isInitiator]);
+
+    const handleCameraToggle = () => {
+        if (localStreamRef.current) {
+            const videoTrack = localStreamRef.current.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.enabled = !isCameraOn;
+                setIsCameraOn(!isCameraOn);
+            }
+        }
+    };
+
+    const handleMicToggle = () => {
+        if (localStreamRef.current) {
+            const audioTrack = localStreamRef.current.getAudioTracks()[0];
+            if (audioTrack) {
+                audioTrack.enabled = !isMicOn;
+                setIsMicOn(!isMicOn);
+            }
+        }
+    };
+
+    const callTitle = contactName ? `Call with ${contactName}` : `Call ${callId}`;
+
+    return (
+        <div className="flex h-screen max-h-screen bg-black text-white overflow-hidden">
+            <div className="flex flex-1 flex-col relative">
+                {/* Header */}
+                <header className="absolute top-0 left-0 right-0 z-20 p-4 flex justify-between items-center bg-gradient-to-b from-black/70 to-transparent">
+                    <div className="flex items-center gap-4">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                            <Link href="/">
+                                <ChevronLeft />
+                            </Link>
+                        </Button>
+                        <div>
+                            <h2 className="font-semibold">{callTitle}</h2>
+                            <p className="text-xs text-muted-foreground">
+                                Status: <span className="capitalize">{callStatus}</span>
+                            </p>
+                        </div>
+                    </div>
+                    <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30">
+                        <UserPlus className="mr-2 h-4 w-4" />
+                        Invite
+                    </Button>
+                </header>
+
+                {/* Main Video Grid */}
+                <main className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 p-4 pt-20 h-full">
+                     <div className="relative w-full h-full aspect-video rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center">
+                        <video ref={remoteVideoRef} className="w-full h-full object-cover" autoPlay playsInline />
+                        {callStatus === 'connecting' && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/80">
+                                <Spinner size="large" />
+                                <p className="text-muted-foreground">Connecting...</p>
+                            </div>
+                        )}
+                     </div>
+                      <div className="relative w-full h-full aspect-video rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center">
+                        <video ref={localVideoRef} className={`w-full h-full object-cover ${!isCameraOn ? 'hidden' : ''}`} autoPlay muted playsInline />
+                         {!hasCameraPermission && (
+                             <Alert variant="destructive" className="max-w-sm">
+                                <AlertTitle>Camera Access Denied</AlertTitle>
+                                <AlertDescription>
+                                    Please allow camera access in your browser settings to place a call.
+                                </AlertDescription>
+                            </Alert>
+                         )}
+                    </div>
+                </main>
+
+                {/* Controls */}
+                <footer className="absolute bottom-0 left-1/2 -translate-x-1/2 z-20 p-4">
+                    <VideoControls
+                        isCameraOn={isCameraOn}
+                        onCameraToggle={handleCameraToggle}
+                        isMicOn={isMicOn}
+                        onMicToggle={handleMicToggle}
+                    />
+                </footer>
+            </div>
+
+            {/* Chat Panel */}
+            <aside className="w-96 bg-gray-900/50 backdrop-blur-xl border-l border-white/10 h-full flex flex-col">
+                <ChatPanel sessionId={callId || 'no-session'} />
+            </aside>
+        </div>
+    );
 }
+

@@ -49,9 +49,12 @@ export interface ChatRoom {
   };
 }
 
-export interface Call {
+// This interface is for alerting the receiver of an incoming call.
+// The actual WebRTC signaling data will be stored inside the call document itself.
+export interface CallInvitation {
     id: string;
-    sessionId: string;
+    // The call document ID in the 'calls' collection
+    callId: string;
     caller: {
         id: string;
         name: string;
@@ -199,12 +202,19 @@ export const getChatRooms = (userId: string, callback: (rooms: ChatRoom[]) => vo
 
 // --- Call Signaling Functions ---
 
+// 1. Initiator creates a call document and a call invitation
 export const startCall = async (caller: User, receiver: User) => {
-    const sessionId = [caller.uid, receiver.id].sort().join('_');
-    const callsRef = collection(db, 'calls');
-
-    const callDoc = await addDoc(callsRef, {
-        sessionId,
+    // Create the main call document for WebRTC signaling
+    const callDocRef = doc(collection(db, 'calls'));
+    await setDoc(callDocRef, {
+        createdAt: serverTimestamp(),
+        participants: [caller.uid, receiver.id]
+    });
+    
+    // Create a separate invitation document for the receiver to listen to
+    const invitationRef = doc(collection(db, 'callInvitations'));
+    await setDoc(invitationRef, {
+        callId: callDocRef.id,
         caller: {
             id: caller.uid,
             name: caller.displayName,
@@ -215,43 +225,42 @@ export const startCall = async (caller: User, receiver: User) => {
         createdAt: serverTimestamp(),
     });
 
-    return { sessionId, callId: callDoc.id };
+    // We return the call document ID to the caller
+    return { callId: callDocRef.id, invitationId: invitationRef.id };
 }
 
-export const onIncomingCall = (userId: string, callback: (call: Call | null) => void) => {
-    const callsQuery = query(
-        collection(db, 'calls'),
-        where('receiverId', '==', userId)
+// 2. Receiver listens for incoming call invitations
+export const onIncomingCall = (userId: string, callback: (call: CallInvitation | null) => void) => {
+    const invitationsQuery = query(
+        collection(db, 'callInvitations'),
+        where('receiverId', '==', userId),
+        where('status', '==', 'ringing'),
+        orderBy('createdAt', 'desc'),
+        limit(1)
     );
 
-    return onSnapshot(callsQuery, (snapshot) => {
-        let ringingCall: Call | null = null;
-
-        if (!snapshot.empty) {
-            // Find the most recent ringing call
-            const ringingCalls = snapshot.docs
-                .map(doc => ({ id: doc.id, ...doc.data() } as Call))
-                .filter(call => call.status === 'ringing')
-                .sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
-            
-            if (ringingCalls.length > 0) {
-                ringingCall = ringingCalls[0];
-            }
+    return onSnapshot(invitationsQuery, (snapshot) => {
+        if (snapshot.empty) {
+            callback(null);
+            return;
         }
-        
-        callback(ringingCall);
+        const ringingInvitation = snapshot.docs[0].data() as CallInvitation;
+        ringingInvitation.id = snapshot.docs[0].id;
+        callback(ringingInvitation);
     });
 };
 
-export const answerCall = async (callId: string) => {
-    const callRef = doc(db, 'calls', callId);
-    await updateDoc(callRef, { status: 'answered' });
+// 3. Receiver accepts the call
+export const answerCall = async (invitationId: string) => {
+    const invitationRef = doc(db, 'callInvitations', invitationId);
+    await updateDoc(invitationRef, { status: 'answered' });
 };
 
-export const declineCall = async (callId: string) => {
-    const callRef = doc(db, 'calls', callId);
-    // Can either update status or delete the doc. Deleting is cleaner.
-    await deleteDoc(callRef);
+// 4. Receiver or caller declines/ends the call
+export const declineCall = async (invitationId: string) => {
+    const invitationRef = doc(db, 'callInvitations', invitationId);
+    // Can either update status or delete the doc. Deleting is cleaner for ended/declined calls.
+    await deleteDoc(invitationRef);
 };
 
 
