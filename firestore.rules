@@ -1,39 +1,36 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Users can be read by any authenticated user, but only created or updated by the user themselves.
-    // This allows users to look up other users by email to send friend requests.
+    
+    // Users can be read by any authenticated user, but only the owner can write/update their own profile.
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow create, update: if request.auth.uid == userId;
+      allow write: if request.auth.uid == userId;
 
-      // Contacts are private to each user.
+      // Contacts are private to each user
       match /contacts/{contactId} {
         allow read, write: if request.auth.uid == userId;
       }
     }
 
-    // Friend requests have specific rules for creation and access.
+    // Friend requests have specific rules for creation and updates.
     match /friendRequests/{requestId} {
-      // Allow creation if the sender is the authenticated user.
-      allow create: if request.auth.uid == request.resource.data.from;
-
-      // Allow reading only if the user is the sender or the receiver.
+      // Anyone can create a request (send one).
+      allow create: if request.auth != null;
+      // You can read a request if you sent it or received it.
       allow read: if request.auth.uid == resource.data.from || request.auth.uid == resource.data.to;
-
-      // Allow updating (accepting/declining) only by the receiver.
-      allow update: if request.auth.uid == resource.data.to;
-
-      // Allow deleting only by the sender or receiver.
-      allow delete: if request.auth.uid == resource.data.from || request.auth.uid == resource.data.to;
+      // You can only update/delete a request if you are the recipient.
+      allow update, delete: if request.auth.uid == resource.data.to;
     }
-
-    // Chat messages can only be accessed by the participants.
-    match /chats/{chatRoomId}/messages/{messageId} {
-      allow read, write: if request.auth.uid in chatRoomId.split('_');
+    
+    // Chat messages can only be read/written by participants of the chat.
+    match /chats/{chatId} {
+        allow read, write: if request.auth.uid in resource.data.participants;
+        
+        match /messages/{messageId} {
+            allow read, write: if request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        }
     }
   }
 }
