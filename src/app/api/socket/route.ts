@@ -10,7 +10,7 @@ const socketToRoom: Record<string, string> = {};
 // In a real production environment, you might use a different setup.
 const ioHandler = (req: NextApiRequest, res: any) => {
   if (!res.socket.server.io) {
-    console.log('*First use, starting socket.io');
+    console.log('*First use, starting socket.io server...');
 
     const io = new Server(res.socket.server, {
       path: "/api/socket",
@@ -19,25 +19,28 @@ const ioHandler = (req: NextApiRequest, res: any) => {
     });
 
     io.on('connection', (socket) => {
-      console.log('a user connected:', socket.id);
+      console.log('Socket.IO: User connected with socket ID:', socket.id);
 
       socket.on('join room', (roomID, name) => {
         if (users[roomID]) {
-          users[roomID].push({ id: socket.id, name });
+          const existingUser = users[roomID].find(user => user.id === socket.id);
+          if (!existingUser) {
+            users[roomID].push({ id: socket.id, name });
+          }
         } else {
           users[roomID] = [{ id: socket.id, name }];
         }
         socketToRoom[socket.id] = roomID;
         const usersInThisRoom = users[roomID].filter(user => user.id !== socket.id);
 
-        console.log(`User ${name} (${socket.id}) joined room ${roomID}`);
-        console.log('Users in this room:', usersInThisRoom);
+        console.log(`Socket.IO: User ${name} (${socket.id}) joined room ${roomID}`);
+        console.log('Socket.IO: Users in this room:', usersInThisRoom);
 
         socket.emit('all users', usersInThisRoom);
       });
 
       socket.on('sending signal', (payload) => {
-        console.log(`User ${payload.callerID} sending signal to ${payload.userToSignal}`);
+        console.log(`Socket.IO: User ${payload.callerID} sending signal to ${payload.userToSignal}`);
         io.to(payload.userToSignal).emit('user joined', {
           signal: payload.signal,
           callerID: payload.callerID,
@@ -46,15 +49,15 @@ const ioHandler = (req: NextApiRequest, res: any) => {
       });
 
       socket.on('returning signal', (payload) => {
-        console.log(`User ${socket.id} returning signal to ${payload.userToSignal}`);
-        io.to(payload.userToSignal).emit('receiving returned signal', {
+        console.log(`Socket.IO: User ${socket.id} returning signal to ${payload.callerID}`);
+        io.to(payload.callerID).emit('receiving returned signal', {
           signal: payload.signal,
           id: socket.id,
         });
       });
 
       socket.on('disconnect', () => {
-        console.log('user disconnected:', socket.id);
+        console.log('Socket.IO: User disconnected:', socket.id);
         const roomID = socketToRoom[socket.id];
         let room = users[roomID];
         if (room) {
@@ -72,7 +75,7 @@ const ioHandler = (req: NextApiRequest, res: any) => {
 
     res.socket.server.io = io;
   } else {
-    console.log('socket.io already running');
+    console.log('Socket.io server already running');
   }
   res.end();
 }
