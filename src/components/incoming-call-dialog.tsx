@@ -28,7 +28,7 @@ export function IncomingCallDialog({ call, onClose }: IncomingCallDialogProps) {
     try {
       await answerCall(call.id);
       onClose();
-      router.push(`/call?id=${call.sessionId}`);
+      router.push(`/call?id=${call.sessionId}&contactName=${encodeURIComponent(call.caller.name)}`);
     } catch (error) {
       console.error('Failed to answer call:', error);
       toast({

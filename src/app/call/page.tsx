@@ -62,7 +62,9 @@ export default function CallPage() {
         const otherParticipantNames = participants.map(p => p.name).join(', ');
         setCallTitle(`Call with ${otherParticipantNames}`);
       } else if (contactName) {
-        setCallTitle(`Calling ${contactName}...`);
+        // If you start the call, it says "Calling...". If you answer, it shows who you're calling.
+        const isAnswering = participants.length === 0;
+        setCallTitle(isAnswering ? `Call with ${contactName}`: `Calling ${contactName}...`);
       } else {
         setCallTitle('Waiting for others to join...');
       }
