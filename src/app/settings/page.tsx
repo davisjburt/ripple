@@ -19,14 +19,20 @@ import { Spinner } from '@/components/ui/spinner';
 
 
 export default function SettingsPage() {
-    const { user } = useAuth();
+    const { user, loading: authLoading } = useAuth();
     const { toast } = useToast();
     const [newImage, setNewImage] = useState<File | null>(null);
-    const [previewUrl, setPreviewUrl] = useState<string | null>(user?.photoURL || null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cameraInputRef = useRef<HTMLInputElement>(null);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+    React.useEffect(() => {
+        if (user?.photoURL) {
+            setPreviewUrl(user.photoURL);
+        }
+    }, [user]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -49,17 +55,21 @@ export default function SettingsPage() {
 
         setLoading(true);
         try {
+            // 1. Upload to Storage
             const storageRef = ref(storage, `profile-pics/${user.uid}`);
             const uploadResult = await uploadBytes(storageRef, newImage);
             const downloadURL = await getDownloadURL(uploadResult.ref);
 
+            // 2. Update Auth profile
             if (auth.currentUser) {
                 await updateProfile(auth.currentUser, { photoURL: downloadURL });
             }
             
+            // 3. Update Firestore document
             const userDocRef = doc(db, 'users', user.uid);
             await updateDoc(userDocRef, { photoURL: downloadURL });
             
+            // 4. Update UI
             setPreviewUrl(downloadURL);
             setNewImage(null);
             toast({
@@ -67,10 +77,11 @@ export default function SettingsPage() {
                 description: 'Your profile picture has been updated.',
             });
         } catch (error: any) {
+            console.error("Upload failed:", error);
             toast({
                 variant: 'destructive',
                 title: 'Upload Failed',
-                description: error.message || 'An unexpected error occurred.',
+                description: error.message || 'An unexpected error occurred. Please check permissions.',
             });
         } finally {
             setLoading(false);
@@ -89,6 +100,7 @@ export default function SettingsPage() {
             <CardDescription>Manage your account and application settings.</CardDescription>
           </CardHeader>
           <CardContent>
+            {authLoading && <Spinner />}
             {user && (
                  <div className="space-y-6">
                     <Card>
