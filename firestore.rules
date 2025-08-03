@@ -1,40 +1,60 @@
 
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can read/write their own profile.
-    // Users can be looked up by email for friend requests.
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow list: if request.auth != null;
+    // Helper function to check if a user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
     }
 
-    // Users can only read/write to their own contacts sub-collection.
-    match /users/{userId}/contacts/{contactId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Users can create friend requests.
-    // Users can read/update requests sent to or from them.
-    // Users can query for requests sent TO them.
-    match /friendRequests/{requestId} {
-      allow create: if request.auth != null && request.resource.data.from == request.auth.uid;
-      allow read, update: if request.auth != null && (request.auth.uid == resource.data.from || request.auth.uid == resource.data.to);
+    // Helper function to check if the user is the owner of the document
+    function isOwner(userId) {
+      return request.auth.uid == userId;
     }
     
-    // Users can only list/read/write chats they are a participant in.
-    // This also allows ordering the chat list by the last message timestamp.
+    // Users can be read by any authenticated user, but only the user themselves can write.
+    // This allows for looking up users to start a chat or send a friend request.
+    match /users/{userId} {
+      allow read, get: if isAuthenticated();
+      allow write: if isOwner(userId);
+
+      // A user can only access their own contacts list.
+      match /contacts/{contactId} {
+        allow read, list: if isOwner(userId);
+      }
+    }
+    
+    // Friend requests
+    match /friendRequests/{requestId} {
+      // Allow creating a request if authenticated and the 'from' field is the user's own ID.
+      allow create: if isAuthenticated() && request.resource.data.from == request.auth.uid;
+      
+      // Allow reading a request only if you are the sender or receiver.
+      allow get: if isAuthenticated() && (request.resource.data.from == request.auth.uid || request.resource.data.to == request.auth.uid);
+      
+      // Allow updating a request (e.g., to accept/decline) only if you are the recipient.
+      allow update: if isAuthenticated() && resource.data.to == request.auth.uid;
+      
+      // Allow deleting a request only if you are the sender or receiver.
+      allow delete: if isAuthenticated() && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+      
+      // Allow listing requests where you are the recipient. This is for the friend requests page.
+      allow list: if isAuthenticated() && request.query.where.to == request.auth.uid;
+    }
+
+    // Chats
     match /chats/{chatId} {
-       allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
-       
-       // This is the critical rule that allows fetching the chat list.
-       allow list: if request.auth != null && request.query.where.path == "participants" && request.query.where.op == "array-contains" && request.query.where.value == request.auth.uid;
-       
-       // Users can read/write messages in chats they are a part of.
-       match /messages/{messageId} {
-         allow read, write: if request.auth != null && get(/databases/$(database)/documents/chats/$(chatId)).data.participants[0] == request.auth.uid || get(/databases/$(database)/documents/chats/$(chatId)).data.participants[1] == request.auth.uid;
-       }
+        // A user can read, write, or list chats only if their UID is in the 'participants' array.
+      allow read, write: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      allow list: if isAuthenticated() && request.query.where.participants.hasAny([request.auth.uid]);
+
+      // Messages sub-collection
+      match /messages/{messageId} {
+         // To read/write a message, you must be a participant in the parent chat room.
+         allow read, write: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+      }
     }
   }
 }
