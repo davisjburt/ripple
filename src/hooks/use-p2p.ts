@@ -75,7 +75,8 @@ export function useP2P(sessionId: string, localStream: MediaStream | null) {
     if (!user || !localStream) return;
 
     // Connect to the signaling server running on the custom server
-    socketRef.current = io();
+    // NOTE: In a real-world app, this URL should come from an environment variable
+    socketRef.current = io('http://localhost:3001');
 
     setIsConnected(false);
 

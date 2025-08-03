@@ -17,7 +17,12 @@ app.prepare().then(() => {
     handle(req, res, parsedUrl);
   });
 
-  const io = new Server(httpServer);
+  const io = new Server(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
 
   io.on('connection', (socket) => {
     console.log('Socket.IO: User connected with socket ID:', socket.id);
@@ -73,9 +78,22 @@ app.prepare().then(() => {
     });
   });
 
-  const port = process.env.PORT || 9002;
+  const port = dev ? 3001 : process.env.PORT || 3000;
   httpServer.listen(port, (err) => {
     if (err) throw err;
-    console.log(`> Ready on http://localhost:${port}`);
+    console.log(`> Signaling server ready on http://localhost:${port}`);
   });
+
+  // This is the part that was missing for dev mode
+  if (dev) {
+    const nextServer = createServer((req, res) => {
+        const parsedUrl = parse(req.url, true);
+        handle(req, res, parsedUrl)
+    });
+    const nextPort = 3000;
+    nextServer.listen(nextPort, err => {
+        if (err) throw err;
+        console.log(`> Next.js app ready on http://localhost:${nextPort}`)
+    })
+  }
 });
