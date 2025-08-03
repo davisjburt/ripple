@@ -221,25 +221,25 @@ export const startCall = async (caller: User, receiver: User) => {
 export const onIncomingCall = (userId: string, callback: (call: Call | null) => void) => {
     const callsQuery = query(
         collection(db, 'calls'),
-        where('receiverId', '==', userId),
-        orderBy('createdAt', 'desc'),
-        limit(1)
+        where('receiverId', '==', userId)
     );
 
     return onSnapshot(callsQuery, (snapshot) => {
-        if (snapshot.empty) {
-            callback(null);
-            return;
-        }
-        const callDoc = snapshot.docs[0];
-        const callData = callDoc.data() as Call;
+        let ringingCall: Call | null = null;
 
-        // Filter for 'ringing' status on the client
-        if (callData.status === 'ringing') {
-            callback({ id: callDoc.id, ...callData });
-        } else {
-            callback(null);
+        if (!snapshot.empty) {
+            // Find the most recent ringing call
+            const ringingCalls = snapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() } as Call))
+                .filter(call => call.status === 'ringing')
+                .sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
+            
+            if (ringingCalls.length > 0) {
+                ringingCall = ringingCalls[0];
+            }
         }
+        
+        callback(ringingCall);
     });
 };
 
