@@ -36,17 +36,22 @@ export default function SignupPage() {
         setLoading(true);
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            await updateProfile(userCredential.user, { 
+            const user = userCredential.user;
+            
+            const photoURL = `https://placehold.co/100x100/E9E9F0/333?text=${name.charAt(0)}`;
+
+            await updateProfile(user, { 
                 displayName: name,
-                photoURL: `https://placehold.co/100x100/E9E9F0/333?text=${name.charAt(0)}`
+                photoURL: photoURL
             });
 
-            // Create a user document in Firestore
-            await setDoc(doc(db, "users", userCredential.user.uid), {
-                uid: userCredential.user.uid,
+            // Create a user document in Firestore to store user information
+            // This is crucial for features like searching for users by email.
+            await setDoc(doc(db, "users", user.uid), {
+                uid: user.uid,
                 displayName: name,
-                email: email.toLowerCase(),
-                photoURL: `https://placehold.co/100x100/E9E9F0/333?text=${name.charAt(0)}`
+                email: email.toLowerCase(), // Store email in lowercase for case-insensitive queries
+                photoURL: photoURL
             });
 
             router.push('/');
