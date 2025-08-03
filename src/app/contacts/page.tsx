@@ -123,7 +123,7 @@ export default function ContactsPage() {
         photoURL: user.photoURL || '',
       };
       const { sessionId } = await startCall(caller, contact);
-      router.push(`/call?id=${sessionId}`);
+      router.push(`/call?id=${sessionId}&contactName=${encodeURIComponent(contact.displayName)}`);
     } catch (error) {
       console.error("Failed to start call:", error);
       toast({

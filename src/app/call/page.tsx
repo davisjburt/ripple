@@ -48,8 +48,11 @@ export default function CallPage() {
     const searchParams = useSearchParams();
     const { user } = useAuth();
     const sessionId = searchParams.get('id') || 'default-session';
+    const contactName = searchParams.get('contactName');
     
     const { peers, isConnected } = useP2P(sessionId, localStream);
+    
+    const callTitle = contactName ? `Call with ${contactName}` : 'Project Phoenix Kick-off';
 
     useEffect(() => {
         const getCameraPermission = async () => {
@@ -117,7 +120,7 @@ export default function CallPage() {
               </Link>
             </Button>
             <div>
-              <h2 className="font-semibold">Project Phoenix Kick-off</h2>
+              <h2 className="font-semibold">{callTitle}</h2>
               <p className="text-xs text-muted-foreground">Session ID: {sessionId}</p>
             </div>
           </div>
@@ -174,7 +177,7 @@ export default function CallPage() {
 
       {/* Chat Panel */}
       <aside className="w-96 bg-gray-900/50 backdrop-blur-xl border-l border-white/10 h-full flex flex-col">
-        <ChatPanel />
+        <ChatPanel sessionId={sessionId} />
       </aside>
     </div>
   );
