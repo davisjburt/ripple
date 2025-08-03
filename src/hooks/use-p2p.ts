@@ -73,13 +73,9 @@ export function useP2P(sessionId: string, localStream: MediaStream | null) {
 
   useEffect(() => {
     if (!user || !localStream) return;
-    
-    // This is a workaround to ensure the API route is warm before connecting.
-    fetch('/api/socket');
 
-    socketRef.current = io({
-      path: '/api/socket',
-    });
+    // Connect to the signaling server running on the custom server
+    socketRef.current = io();
 
     setIsConnected(false);
 
