@@ -209,7 +209,7 @@ export const startCall = async (caller: User, receiver: User) => {
     const callDocRef = doc(collection(db, 'calls'));
     await setDoc(callDocRef, {
         createdAt: serverTimestamp(),
-        participants: [caller.id, receiver.id]
+        participants: [caller.uid, receiver.id]
     });
     
     // Create a separate invitation document for the receiver to listen to
@@ -217,7 +217,7 @@ export const startCall = async (caller: User, receiver: User) => {
     await setDoc(invitationRef, {
         callId: callDocRef.id,
         caller: {
-            id: caller.id,
+            id: caller.uid,
             name: caller.displayName,
             photoURL: caller.photoURL,
         },
@@ -259,14 +259,27 @@ export const answerCall = async (invitationId: string) => {
 
 // 4. Receiver or caller declines/ends the call
 export const declineCall = async (invitationId: string) => {
-    const invitationRef = doc(db, 'callInvitations', invitationId);
-    const invitationSnap = await getDoc(invitationRef);
-    if(invitationSnap.exists()){
-        const callId = invitationSnap.data().callId;
-        if(callId) {
-             await deleteDoc(doc(db, 'calls', callId));
+    try {
+        const invitationRef = doc(db, 'callInvitations', invitationId);
+        const invitationSnap = await getDoc(invitationRef);
+        if(invitationSnap.exists()){
+            const callId = invitationSnap.data().callId;
+            // Clean up all related documents in a batch
+            const batch = writeBatch(db);
+            
+            // Delete the main call document
+            if (callId) {
+                batch.delete(doc(db, 'calls', callId));
+            }
+            
+            // Delete the invitation
+            batch.delete(invitationRef);
+
+            await batch.commit();
         }
-        await deleteDoc(invitationRef);
+    } catch (error) {
+        console.error("Error declining call: ", error);
+        // Don't re-throw, just log it.
     }
 };
 

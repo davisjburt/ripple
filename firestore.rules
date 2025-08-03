@@ -3,50 +3,69 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Helper function to check for authentication
+    function isAuthenticated() {
+      return request.auth != null;
+    }
 
-    // Users: Can read any profile, can only write to their own.
+    // --- Users Collection ---
+    // Users can read any profile (to find contacts)
+    // Users can only write to their own document
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth.uid == userId;
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
 
-      // Contacts: Can only read/write their own contacts.
+      // Contacts subcollection
       match /contacts/{contactId} {
-         allow read, write: if request.auth.uid == userId;
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
     }
 
-    // Friend Requests: Can create, can read/update if they are the recipient.
+    // --- Friend Requests Collection ---
+    // Can only be created by the sender
+    // Can only be read/updated by sender or receiver
     match /friendRequests/{requestId} {
-      allow create: if request.auth != null;
-      allow read, update: if request.auth.uid == resource.data.to;
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.from;
+      allow read, update, delete: if isAuthenticated() && (request.auth.uid == resource.data.from || request.auth.uid == resource.data.to);
     }
-
-    // Chats: Can only access chats they are a participant in.
+    
+    // --- Chats Collection ---
+    // Can only be read/written by participants
+    // This rule also covers listing/querying chats
     match /chats/{chatId} {
-      allow read, write: if request.auth.uid in resource.data.participants;
+      allow read, write, create: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      allow list: if isAuthenticated() && request.auth.uid == request.query.where.participants;
 
+      // Messages subcollection
       match /messages/{messageId} {
-        allow read, write: if request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        // Inherits parent's permissions: only participants can access messages
+        allow read, write, create: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
       }
     }
 
-    // Call documents for WebRTC signaling
+    // --- Calls & Invitations ---
+    // Rules for video call signaling
+    
     match /calls/{callId} {
-      allow get, create: if request.auth != null;
-      allow read, write: if request.auth.uid in resource.data.participants;
+        // Only participants can create, read, or write to a call document
+        allow read, write, create, delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
 
-      // Allow participants to manage ICE candidates
-      match /{candidateCollection}/{candidateId} {
-        allow read, write, delete: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-      }
+        // The ICE candidate subcollections need to be writable by participants
+        match /{subcollection=**} {
+            allow read, write, create, delete: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
+        }
     }
 
-    // Call invitations for notifying users of incoming calls
     match /callInvitations/{invitationId} {
-      allow get: if request.auth != null;
-      allow create: if request.auth != null;
-      allow list: if request.auth.uid == request.query.where.receiverId;
-      allow update, delete: if request.auth.uid == resource.data.receiverId || request.auth.uid == resource.data.caller.id;
+        // Anyone authenticated can create an invitation (start a call)
+        allow create: if isAuthenticated() && request.auth.uid == request.resource.data.caller.id;
+      
+        // The query in onIncomingCall filters by receiverId. This rule validates that query.
+      allow list: if isAuthenticated() && request.auth.uid == request.query.where.receiverId;
+      
+      // Allow direct reads, updates, and deletes only by the caller or receiver
+        allow get, update, delete: if isAuthenticated() && (request.auth.uid == resource.data.receiverId || request.auth.uid == resource.data.caller.id);
     }
   }
 }
