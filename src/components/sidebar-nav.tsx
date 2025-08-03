@@ -6,7 +6,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from '@/components/ui/sidebar';
-import { LayoutDashboard, Users, Phone, Settings, LogIn, UserPlus } from 'lucide-react';
+import { LayoutDashboard, Users, Phone, Settings, LogIn, UserPlus, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
@@ -26,6 +26,8 @@ const authItems = [
 export function SidebarNav() {
   const pathname = usePathname();
   const { user } = useAuth();
+  
+  const isChatPage = pathname.startsWith('/chat');
 
   return (
     <SidebarMenu>
@@ -42,6 +44,21 @@ export function SidebarNav() {
             </Link>
         </SidebarMenuItem>
       ))}
+      
+       {user && isChatPage && (
+         <SidebarMenuItem>
+            <Link href={pathname} passHref>
+                <SidebarMenuButton
+                isActive={true}
+                tooltip={"Chat"}
+                >
+                <MessageSquare/>
+                <span>Chat</span>
+                </SidebarMenuButton>
+            </Link>
+         </SidebarMenuItem>
+      )}
+      
       {!user && authItems.map((item) => (
           <SidebarMenuItem key={item.href}>
           <Link href={item.href}>

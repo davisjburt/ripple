@@ -19,7 +19,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
 
 export default function SignupPage() {
@@ -35,7 +36,19 @@ export default function SignupPage() {
         setLoading(true);
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            await updateProfile(userCredential.user, { displayName: name });
+            await updateProfile(userCredential.user, { 
+                displayName: name,
+                photoURL: `https://placehold.co/100x100/E9E9F0/333?text=${name.charAt(0)}`
+            });
+
+            // Create a user document in Firestore
+            await setDoc(doc(db, "users", userCredential.user.uid), {
+                uid: userCredential.user.uid,
+                displayName: name,
+                email: email,
+                photoURL: `https://placehold.co/100x100/E9E9F0/333?text=${name.charAt(0)}`
+            });
+
             router.push('/');
         } catch (error: any) {
             toast({

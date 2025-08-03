@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -21,83 +22,94 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { MessageSquare, Phone, Plus, Users } from 'lucide-react';
+import { MessageSquare, Phone, Plus, Users, UserCheck, UserX, Check, X } from 'lucide-react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/hooks/use-auth';
+import { useToast } from '@/hooks/use-toast';
+import { 
+  addContact,
+  getContacts, 
+  getFriendRequests, 
+  handleFriendRequest,
+  User,
+  FriendRequest
+} from '@/lib/firebase';
+import { onSnapshot } from 'firebase/firestore';
 
-const initialContacts = [
-  {
-    name: 'Sarah Connor',
-    email: 'sarah.c@skynet.com',
-    avatar: 'https://placehold.co/40x40/F0E9E9/333?text=SC',
-    status: 'online',
-  },
-  {
-    name: 'John Doe',
-    email: 'john.d@example.com',
-    avatar: 'https://placehold.co/40x40/E9F0F0/333?text=JD',
-    status: 'online',
-  },
-  {
-    name: 'Jane Smith',
-    email: 'jane.s@example.com',
-    avatar: 'https://placehold.co/40x40/E9E9F0/333?text=JS',
-    status: 'offline',
-  },
-  {
-    name: 'Michael Bay',
-    email: 'm.bay@explosions.net',
-    avatar: 'https://placehold.co/40x40/F0E9F0/333?text=MB',
-    status: 'away',
-  },
-    {
-    name: 'Ellen Ripley',
-    email: 'ellen.r@weyland-yutani.com',
-    avatar: 'https://placehold.co/40x40/F0F0E9/333?text=ER',
-    status: 'online',
-  },
-];
 
 export default function ContactsPage() {
-  const [contacts, setContacts] = useState(initialContacts);
+  const [contacts, setContacts] = useState<User[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [newContactEmail, setNewContactEmail] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const { user } = useAuth();
+  const { toast } = useToast();
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'online':
-        return <Badge variant="secondary" className="bg-green-500/20 text-green-700 border-green-500/30">Online</Badge>;
-      case 'offline':
-        return <Badge variant="outline">Offline</Badge>;
-      case 'away':
-        return <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-700 border-yellow-500/30">Away</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
+   useEffect(() => {
+    if (!user) return;
+
+    const unsubscribeContacts = onSnapshot(getContacts(user.uid), (snapshot) => {
+      const contactsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      setContacts(contactsData);
+    });
+
+    const unsubscribeRequests = onSnapshot(getFriendRequests(user.uid), (snapshot) => {
+        const requestsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FriendRequest));
+        setFriendRequests(requestsData);
+    });
+
+    return () => {
+        unsubscribeContacts();
+        unsubscribeRequests();
+    };
+  }, [user]);
+
+
+  const handleAddContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newContactEmail || !user) return;
+    
+    try {
+      const result = await addContact(user.uid, newContactEmail);
+      toast({
+        title: result.success ? 'Request Sent' : 'Error',
+        description: result.message,
+        variant: result.success ? 'default' : 'destructive',
+      });
+       if(result.success) {
+        setNewContactEmail('');
+        setIsDialogOpen(false);
+       }
+    } catch (error: any) {
+        toast({
+            title: 'Error sending request',
+            description: error.message,
+            variant: 'destructive',
+        });
     }
   };
 
-  const handleAddContact = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newContactEmail) return;
+  const respondToRequest = async (requestId: string, accepted: boolean) => {
+    try {
+      await handleFriendRequest(requestId, accepted);
+      toast({
+        title: accepted ? 'Friend Added' : 'Request Declined',
+        description: `You have ${accepted ? 'accepted' : 'declined'} the friend request.`,
+      });
+    } catch (error: any) {
+       toast({
+        title: 'Error',
+        description: `Failed to respond to request: ${error.message}`,
+        variant: 'destructive',
+      });
+    }
+  };
 
-    const name = newContactEmail.split('@')[0].replace('.', ' ');
-    const initials = name.split(' ').map(n => n[0]).join('').toUpperCase();
-
-    const newContact = {
-        name: name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-        email: newContactEmail,
-        avatar: `https://placehold.co/40x40/E9E9F0/333?text=${initials}`,
-        status: 'online',
-    };
-
-    setContacts(prev => [...prev, newContact]);
-    setNewContactEmail('');
-    setIsDialogOpen(false);
-  }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-8">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -107,7 +119,7 @@ export default function ContactsPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Users />
-              <span>Your Contacts</span>
+              <span>Your Contacts ({contacts.length})</span>
             </CardTitle>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
@@ -121,7 +133,7 @@ export default function ContactsPage() {
                     <DialogHeader>
                     <DialogTitle>Add a new contact</DialogTitle>
                     <DialogDescription>
-                        Enter the email address of the person you want to add.
+                        Enter the email address to send a friend request.
                     </DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
@@ -141,7 +153,7 @@ export default function ContactsPage() {
                     </div>
                     </div>
                     <DialogFooter>
-                    <Button type="submit">Add Contact</Button>
+                    <Button type="submit">Send Request</Button>
                     </DialogFooter>
                 </form>
               </DialogContent>
@@ -152,14 +164,20 @@ export default function ContactsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[300px]">Name</TableHead>
-                  <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {contacts.length === 0 && (
+                    <TableRow>
+                        <TableCell colSpan={2} className="text-center text-muted-foreground py-8">
+                            You haven't added any contacts yet.
+                        </TableCell>
+                    </TableRow>
+                )}
                 {contacts.map((contact, index) => (
                   <motion.tr
-                    key={contact.email}
+                    key={contact.id}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: index * 0.05 }}
@@ -168,27 +186,28 @@ export default function ContactsPage() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar>
-                          <AvatarImage src={contact.avatar} data-ai-hint="person portrait" />
+                          <AvatarImage src={contact.photoURL} data-ai-hint="person portrait" />
                           <AvatarFallback>
-                            {contact.name.split(' ').map(n => n[0]).join('')}
+                            {contact.displayName?.split(' ').map(n => n[0]).join('')}
                           </AvatarFallback>
                         </Avatar>
                         <div>
-                          <div className="font-medium">{contact.name}</div>
+                          <div className="font-medium">{contact.displayName}</div>
                           <div className="text-sm text-muted-foreground">
                             {contact.email}
                           </div>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>{getStatusBadge(contact.status)}</TableCell>
                     <TableCell className="text-right">
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="icon">
-                          <MessageSquare className="h-5 w-5 text-muted-foreground" />
+                        <Button variant="ghost" size="icon" asChild>
+                           <Link href={`/chat/${contact.id}`}>
+                                <MessageSquare className="h-5 w-5 text-muted-foreground" />
+                           </Link>
                         </Button>
                         <Button variant="ghost" size="icon" asChild>
-                           <Link href="/call">
+                           <Link href={`/call?id=${[user?.uid, contact.id].sort().join('_')}`}>
                               <Phone className="h-5 w-5 text-primary" />
                            </Link>
                         </Button>
@@ -201,6 +220,63 @@ export default function ContactsPage() {
           </CardContent>
         </Card>
       </motion.div>
+
+       {friendRequests.length > 0 && (
+         <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            >
+            <Card>
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <UserCheck />
+                    <span>Friend Requests</span>
+                </CardTitle>
+            </CardHeader>
+            <CardContent>
+                 <Table>
+                    <TableHeader>
+                        <TableRow>
+                        <TableHead>From</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {friendRequests.map((request) => (
+                            <TableRow key={request.id}>
+                                <TableCell>
+                                    <div className="flex items-center gap-3">
+                                         <Avatar>
+                                            <AvatarImage src={request.fromPhotoURL} data-ai-hint="person portrait" />
+                                            <AvatarFallback>
+                                                {request.fromName?.split(' ').map(n => n[0]).join('')}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        <div>
+                                            <div className="font-medium">{request.fromName}</div>
+                                            <div className="text-sm text-muted-foreground">{request.fromEmail}</div>
+                                        </div>
+                                    </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                        <Button variant="outline" size="icon" className="text-green-500 border-green-500 hover:bg-green-500/10 hover:text-green-600" onClick={() => respondToRequest(request.id, true)}>
+                                            <Check className="h-4 w-4" />
+                                        </Button>
+                                         <Button variant="outline" size="icon" className="text-red-500 border-red-500 hover:bg-red-500/10 hover:text-red-600" onClick={() => respondToRequest(request.id, false)}>
+                                            <X className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                 </Table>
+            </CardContent>
+            </Card>
+        </motion.div>
+       )}
     </div>
   );
 }
