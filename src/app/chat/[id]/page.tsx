@@ -21,7 +21,7 @@ import {
   setDoc,
   getDocs,
 } from 'firebase/firestore';
-import { ArrowLeft, SendHorizonal } from 'lucide-react';
+import { ArrowLeft, SendHorizonal, MessageSquare } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
