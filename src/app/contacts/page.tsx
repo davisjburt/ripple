@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -17,11 +18,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { MessageSquare, Phone, Plus, Users } from 'lucide-react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { useState } from 'react';
 
-const contacts = [
+const initialContacts = [
   {
     name: 'Sarah Connor',
     email: 'sarah.c@skynet.com',
@@ -55,6 +60,10 @@ const contacts = [
 ];
 
 export default function ContactsPage() {
+  const [contacts, setContacts] = useState(initialContacts);
+  const [newContactEmail, setNewContactEmail] = useState('');
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'online':
@@ -67,6 +76,25 @@ export default function ContactsPage() {
         return <Badge variant="secondary">{status}</Badge>;
     }
   };
+
+  const handleAddContact = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newContactEmail) return;
+
+    const name = newContactEmail.split('@')[0].replace('.', ' ');
+    const initials = name.split(' ').map(n => n[0]).join('').toUpperCase();
+
+    const newContact = {
+        name: name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+        email: newContactEmail,
+        avatar: `https://placehold.co/40x40/E9E9F0/333?text=${initials}`,
+        status: 'online',
+    };
+
+    setContacts(prev => [...prev, newContact]);
+    setNewContactEmail('');
+    setIsDialogOpen(false);
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -81,10 +109,43 @@ export default function ContactsPage() {
               <Users />
               <span>Your Contacts</span>
             </CardTitle>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Contact
-            </Button>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Contact
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <form onSubmit={handleAddContact}>
+                    <DialogHeader>
+                    <DialogTitle>Add a new contact</DialogTitle>
+                    <DialogDescription>
+                        Enter the email address of the person you want to add.
+                    </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="email" className="text-right">
+                        Email
+                        </Label>
+                        <Input
+                        id="email"
+                        type="email"
+                        value={newContactEmail}
+                        onChange={(e) => setNewContactEmail(e.target.value)}
+                        className="col-span-3"
+                        placeholder="contact@example.com"
+                        required
+                        />
+                    </div>
+                    </div>
+                    <DialogFooter>
+                    <Button type="submit">Add Contact</Button>
+                    </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           </CardHeader>
           <CardContent>
             <Table>
