@@ -1,7 +1,7 @@
 
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp, doc, setDoc, writeBatch, getDoc, updateDoc, collectionGroup } from 'firebase/firestore';
+import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp, doc, setDoc, writeBatch, getDoc, updateDoc, collectionGroup, onSnapshot, Unsubscribe, orderBy, limit } from 'firebase/firestore';
 
 
 const firebaseConfig = {
@@ -35,6 +35,19 @@ export interface FriendRequest {
     fromPhotoURL: string;
     to: string;
     status: 'pending' | 'accepted' | 'declined';
+}
+
+export interface ChatRoom {
+  id: string;
+  otherUser: {
+    id: string;
+    displayName: string;
+    photoURL: string;
+  };
+  lastMessage: {
+    text: string;
+    timestamp: any;
+  } | null;
 }
 
 
@@ -147,6 +160,57 @@ export const handleFriendRequest = async (requestId: string, accept: boolean) =>
 
     await batch.commit();
 }
+
+// Function to get a user's chat rooms with last messages
+export const getChatRooms = (userId: string, callback: (rooms: ChatRoom[]) => void): Unsubscribe => {
+    const chatsQuery = query(
+      collection(db, 'chats'),
+      where('participants', 'array-contains', userId)
+    );
+
+    const unsubscribe = onSnapshot(chatsQuery, async (querySnapshot) => {
+      const rooms: ChatRoom[] = await Promise.all(
+        querySnapshot.docs.map(async (docSnap) => {
+          const chatData = docSnap.data();
+          const otherUserId = chatData.participants.find((p: string) => p !== userId);
+          
+          let otherUser = null;
+          if (chatData.users && chatData.users[otherUserId]) {
+              otherUser = chatData.users[otherUserId];
+          }
+
+          // Fetch last message
+          const messagesQuery = query(
+            collection(db, 'chats', docSnap.id, 'messages'),
+            orderBy('timestamp', 'desc'),
+            limit(1)
+          );
+          const messagesSnapshot = await getDocs(messagesQuery);
+          const lastMessage = messagesSnapshot.docs.length > 0
+              ? { text: messagesSnapshot.docs[0].data().text, timestamp: messagesSnapshot.docs[0].data().timestamp }
+              : null;
+
+          return {
+            id: docSnap.id,
+            otherUser: otherUser,
+            lastMessage: lastMessage
+          };
+        })
+      );
+      
+      const validRooms = rooms.filter(room => room.otherUser !== null);
+      
+      validRooms.sort((a, b) => {
+        if (!a.lastMessage?.timestamp) return 1;
+        if (!b.lastMessage?.timestamp) return -1;
+        return b.lastMessage.timestamp.toMillis() - a.lastMessage.timestamp.toMillis();
+      });
+
+      callback(validRooms);
+    });
+
+    return unsubscribe;
+};
 
 
 export { app, auth, db };
