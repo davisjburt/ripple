@@ -1,76 +1,59 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-  
-    // Helper function to check if a user is a participant in a chat
-    function isChatParticipant(chatRoomId) {
-      return request.auth.uid in get(/databases/$(database)/documents/chats/$(chatRoomId)).data.participants;
-    }
 
-    // --- Users Collection ---
-    // Users can read any profile (to find contacts)
-    // Users can only create/update their own profile
+    // Users can read their own document and other users' public profiles.
+    // They can only create their own user document and can only update their own.
     match /users/{userId} {
-      allow read;
-      allow create, update: if request.auth.uid == userId;
+      allow read: if request.auth != null;
+      allow create: if request.auth.uid == userId;
+      allow update: if request.auth.uid == userId;
 
-      // Contacts Subcollection
-      // Users can only manage their own contacts list
+      // Contacts are a subcollection of a user
       match /contacts/{contactId} {
-        allow read, write, delete: if request.auth.uid == userId;
+        allow read, list: if request.auth.uid == userId;
       }
     }
 
-    // --- Friend Requests Collection ---
-    // Allow users to create requests
-    // Allow users to read requests sent to them or by them
-    // Allow the recipient to update (accept/decline) a request
+    // Friend requests can be created by any authenticated user.
+    // A user can read/update a request only if they are the recipient ('to').
+    // A user can only list requests that are specifically for them and are pending.
     match /friendRequests/{requestId} {
-      allow create: if request.auth.uid != null;
-      allow read: if request.auth.uid == resource.data.to || request.auth.uid == resource.data.from;
-      allow update: if request.auth.uid == resource.data.to;
+      allow create: if request.auth != null;
+      allow get, update: if request.auth.uid == resource.data.to;
+      allow list: if request.auth.uid == request.query.where.to && request.query.where.status == 'pending';
     }
 
-    // --- Chats Collection ---
-    // Users can only read/list chats they are a participant in
-    // Users can only create chats they are a participant in
-    match /chats/{chatRoomId} {
+    // A user can only access a chat room if they are a participant.
+    match /chats/{chatId} {
       allow get, list: if request.auth.uid in resource.data.participants;
       allow create: if request.auth.uid in request.resource.data.participants;
 
-      // Messages Subcollection
-      // Users can read/write messages only if they are part of the parent chat room
+      // Messages can be read by participants, and only created by the sender.
       match /messages/{messageId} {
-        allow read, write: if isChatParticipant(chatRoomId);
+        allow read, list: if get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+        allow create: if request.auth.uid == request.resource.data.senderId && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
       }
     }
-    
-    // --- Calls Collection ---
-    // A user can create a call if they are a participant
-    // A user can read/write a call document if they are a participant
-    match /calls/{callId} {
-       allow create: if request.auth.uid in request.resource.data.participants;
-       allow read, write: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
 
-        // Signaling Subcollections
-        // A participant in the call can read/write signaling candidates
-       match /{candidatesCollection=**} {
-         allow read, write: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-       }
+    // A user can only access a call if they are a participant.
+    match /calls/{callId} {
+      allow get, create, update, delete: if request.auth.uid in resource.data.participants || request.auth.uid in request.resource.data.participants;
+      
+      // Candidates can be created and read by call participants.
+      match /{collectionId}/{candidateId} {
+        allow read, create, list, delete: if get(/databases/$(database)/documents/calls/$(callId)).data.participants.hasAny([request.auth.uid]);
+      }
     }
 
-    // --- Call Invitations Collection ---
-    // Any authenticated user can create an invitation
-    // A user can only query for invitations where they are the receiver
-    // The receiver can update the invitation (to answer/decline)
-    // The receiver or caller can delete the invitation
+    // Invitations can be created by anyone authenticated.
+    // A user can only see invitations where they are the receiver.
     match /callInvitations/{invitationId} {
-        allow create: if request.auth.uid != null;
-        allow list: if request.auth.uid == request.query.where.receiverId;
-        allow get: if request.auth.uid == resource.data.receiverId || request.auth.uid == resource.data.caller.id;
-        allow update: if request.auth.uid == resource.data.receiverId;
-        allow delete: if request.auth.uid == resource.data.receiverId || request.auth.uid == resource.data.caller.id;
+      allow create: if request.auth.uid != null;
+      allow get, update, delete: if request.auth.uid == resource.data.receiverId || request.auth.uid == resource.data.caller.id;
+      allow list: if request.auth.uid == request.query.where.receiverId;
     }
   }
 }
