@@ -1,45 +1,38 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users
-    // - Anyone can create a user document (needed for sign-up).
-    // - Authenticated users can read other user profiles (to find contacts).
-    // - Users can only update or delete their own profile.
+    // Users can be read by any authenticated user, but only the user themselves can update their own document.
+    // Writes are only allowed for creation (e.g., during signup).
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Contacts (sub-collection of users)
-    // - A user can only manage their own contacts list.
-    match /users/{userId}/contacts/{contactId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Friend Requests
-    // - Authenticated users can create requests.
-    // - You can only read requests sent to you.
-    // - You can only accept/decline requests sent to you.
-    // - The sender can cancel their own request.
-    match /friendRequests/{requestId} {
       allow create: if request.auth != null;
-      allow read, update: if request.auth != null && (request.auth.uid == resource.data.to || request.auth.uid == resource.data.from);
-      allow list: if request.auth != null && request.query.where.to == request.auth.uid;
+      allow update: if request.auth.uid == userId;
+
+      // A user can only access their own contacts list.
+      match /contacts/{contactId} {
+        allow read, write: if request.auth.uid == userId;
+      }
     }
 
-    // Chats
-    // - You can only read/write messages in a chat if you are a participant.
-    // - You can only list chats where you are a participant.
-    match /chats/{chatId} {
-        allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
-        
-        // This rule allows the query in src/app/chat/page.tsx
-        allow list: if request.auth != null && request.query.where.participants.includes(request.auth.uid);
+    // Friend requests have more complex rules.
+    match /friendRequests/{requestId} {
+      // Allow read if the user is either the sender or the receiver of the request.
+      allow read: if request.auth != null && (request.auth.uid == resource.data.from || request.auth.uid == resource.data.to);
+      // Allow creation by any authenticated user.
+      allow create: if request.auth != null;
+      // Allow update (accept/decline) only by the user who received the request.
+      allow update: if request.auth != null && request.auth.uid == resource.data.to;
+    }
 
+    // Chat documents can be read or written to only by the participants of the chat.
+    // The query to list chats is secured by a rule on the collection itself.
+    match /chats/{chatId} {
+        allow list: if request.auth != null && request.auth.uid in request.query.where.participants;
+        allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
+
+        // Messages can only be read or written by participants of the parent chat.
         match /messages/{messageId} {
             allow read, write: if request.auth != null && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
         }
