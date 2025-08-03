@@ -1,7 +1,7 @@
 
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp, doc, setDoc, writeBatch, getDoc, updateDoc, collectionGroup, onSnapshot, Unsubscribe, orderBy, limit } from 'firebase/firestore';
+import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp, doc, setDoc, writeBatch, getDoc, updateDoc, collectionGroup, onSnapshot, Unsubscribe, orderBy, limit, deleteDoc } from 'firebase/firestore';
 import { getStorage } from "firebase/storage";
 
 
@@ -47,6 +47,19 @@ export interface ChatRoom {
     displayName: string;
     photoURL: string;
   };
+}
+
+export interface Call {
+    id: string;
+    sessionId: string;
+    caller: {
+        id: string;
+        name: string;
+        photoURL: string;
+    };
+    receiverId: string;
+    status: 'ringing' | 'answered' | 'declined' | 'missed';
+    createdAt: any;
 }
 
 
@@ -182,6 +195,57 @@ export const getChatRooms = (userId: string, callback: (rooms: ChatRoom[]) => vo
     });
 
     return unsubscribe;
+};
+
+// --- Call Signaling Functions ---
+
+export const startCall = async (caller: User, receiver: User) => {
+    const sessionId = [caller.uid, receiver.id].sort().join('_');
+    const callsRef = collection(db, 'calls');
+
+    const callDoc = await addDoc(callsRef, {
+        sessionId,
+        caller: {
+            id: caller.uid,
+            name: caller.displayName,
+            photoURL: caller.photoURL,
+        },
+        receiverId: receiver.id,
+        status: 'ringing',
+        createdAt: serverTimestamp(),
+    });
+
+    return { sessionId, callId: callDoc.id };
+}
+
+export const onIncomingCall = (userId: string, callback: (call: Call | null) => void) => {
+    const callsQuery = query(
+        collection(db, 'calls'),
+        where('receiverId', '==', userId),
+        where('status', '==', 'ringing'),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+    );
+
+    return onSnapshot(callsQuery, (snapshot) => {
+        if (snapshot.empty) {
+            callback(null);
+            return;
+        }
+        const callDoc = snapshot.docs[0];
+        callback({ id: callDoc.id, ...callDoc.data() } as Call);
+    });
+};
+
+export const answerCall = async (callId: string) => {
+    const callRef = doc(db, 'calls', callId);
+    await updateDoc(callRef, { status: 'answered' });
+};
+
+export const declineCall = async (callId: string) => {
+    const callRef = doc(db, 'calls', callId);
+    // Can either update status or delete the doc. Deleting is cleaner.
+    await deleteDoc(callRef);
 };
 
 

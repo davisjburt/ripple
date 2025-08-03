@@ -34,9 +34,11 @@ import {
   getFriendRequests, 
   handleFriendRequest,
   User,
-  FriendRequest
+  FriendRequest,
+  startCall
 } from '@/lib/firebase';
 import { onSnapshot } from 'firebase/firestore';
+import { useRouter } from 'next/navigation';
 
 
 export default function ContactsPage() {
@@ -46,6 +48,7 @@ export default function ContactsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
+  const router = useRouter();
 
    useEffect(() => {
     if (!user) return;
@@ -102,6 +105,30 @@ export default function ContactsPage() {
        toast({
         title: 'Error',
         description: `Failed to respond to request: ${error.message}`,
+        variant: 'destructive',
+      });
+    }
+  };
+  
+  const handleStartCall = async (contact: User) => {
+    if (!user) return;
+    try {
+      // The `user` object from useAuth is the Firebase Auth user, not our Firestore user object.
+      // We need to create a `User` object that matches our interface.
+      const caller: User = {
+        id: user.uid,
+        uid: user.uid,
+        displayName: user.displayName || 'Anonymous',
+        email: user.email || '',
+        photoURL: user.photoURL || '',
+      };
+      const { sessionId } = await startCall(caller, contact);
+      router.push(`/call?id=${sessionId}`);
+    } catch (error) {
+      console.error("Failed to start call:", error);
+      toast({
+        title: 'Call Error',
+        description: 'Could not initiate the call.',
         variant: 'destructive',
       });
     }
@@ -206,10 +233,8 @@ export default function ContactsPage() {
                                 <MessageSquare className="h-5 w-5 text-muted-foreground" />
                            </Link>
                         </Button>
-                        <Button variant="ghost" size="icon" asChild>
-                           <Link href={`/call?id=${[user?.uid, contact.id].sort().join('_')}`}>
-                              <Phone className="h-5 w-5 text-primary" />
-                           </Link>
+                        <Button variant="ghost" size="icon" onClick={() => handleStartCall(contact)}>
+                            <Phone className="h-5 w-5 text-primary" />
                         </Button>
                       </div>
                     </TableCell>

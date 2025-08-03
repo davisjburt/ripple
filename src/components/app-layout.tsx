@@ -13,18 +13,31 @@ import {
 import { SidebarNav } from '@/components/sidebar-nav';
 import { UserNav } from '@/components/user-nav';
 import { Video } from 'lucide-react';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '@/hooks/use-auth';
+import { Call, onIncomingCall } from '@/lib/firebase';
+import { IncomingCallDialog } from './incoming-call-dialog';
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  // Get sidebar state from cookie
   const [defaultOpen, setDefaultOpen] = React.useState(true);
+  const { user } = useAuth();
+  const [incomingCall, setIncomingCall] = useState<Call | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const savedState = document.cookie.match(/sidebar_state=([^;]+)/);
     if (savedState) {
       setDefaultOpen(savedState[1] === 'true');
     }
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      const unsubscribe = onIncomingCall(user.uid, (call) => {
+        setIncomingCall(call);
+      });
+      return () => unsubscribe();
+    }
+  }, [user]);
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
@@ -50,6 +63,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
         <main className="flex-1 overflow-auto">{children}</main>
       </SidebarInset>
+      {incomingCall && (
+        <IncomingCallDialog
+          call={incomingCall}
+          onClose={() => setIncomingCall(null)}
+        />
+      )}
     </SidebarProvider>
   );
 }
