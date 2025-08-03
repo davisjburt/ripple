@@ -1,50 +1,48 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if a user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Helper function to check if the user is the owner of the document
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-
-    // Users can read their own profile, and any authenticated user can view others' basic info.
-    // Users can only create and update their own profile.
+    // Users: Can only read/write their own data. Anyone can read basic user info.
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isOwner(userId);
-    }
-    
-    // Users can only manage their own contacts subcollection
-    match /users/{userId}/contacts/{contactId} {
-        allow read, write, delete: if isOwner(userId);
-    }
-    
-    // Friend Requests
-    match /friendRequests/{requestId} {
-        // Allow creating a request if authenticated
-        allow create: if isAuthenticated();
-        // Allow reading if you are the sender or receiver
-        allow read: if isAuthenticated() && (request.auth.uid == resource.data.from || request.auth.uid == resource.data.to);
-        // Allow updating (accept/decline) only by the receiver
-        allow update: if isAuthenticated() && request.auth.uid == resource.data.to;
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId;
+
+      // Contacts subcollection: Can only be managed by the parent user.
+      match /contacts/{contactId} {
+        allow read, write: if request.auth.uid == userId;
+      }
     }
 
-    // Chats
+    // Friend Requests:
+    // - Can create if they are the sender.
+    // - Can read if they are the sender or receiver.
+    // - Can update (accept/decline) if they are the receiver.
+    match /friendRequests/{requestId} {
+      allow create: if request.auth.uid == request.resource.data.from;
+      allow read, update: if request.auth.uid == resource.data.to || request.auth.uid == resource.data.from;
+    }
+
+    // Chats:
+    // - Can read/write if they are a participant in the chat.
     match /chats/{chatId} {
-        // Allow reading/listing of chat rooms if the user is a participant
-        allow get, list: if isAuthenticated() && request.auth.uid in resource.data.participants;
-        
-        // Allow users to read messages only if they are a participant of the chat
-        match /messages/{messageId} {
-            allow read, create: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
-        }
+      allow get, list: if request.auth.uid in resource.data.participants;
+
+      // Messages subcollection:
+      // - Can read/create if they are a participant in the parent chat.
+      match /messages/{messageId} {
+        allow read, create: if get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+      }
+    }
+    
+    // Calls:
+    // - Allow create if the caller is the authenticated user.
+    // - Allow read/update if the receiver is the authenticated user.
+    // - Allow delete if the caller or receiver is the authenticated user.
+    match /calls/{callId} {
+      allow create: if request.auth.uid == request.resource.data.caller.id;
+      allow read, update: if request.auth.uid == resource.data.receiverId;
+      allow delete: if request.auth.uid == resource.data.receiverId || request.auth.uid == resource.data.caller.id;
     }
   }
 }
