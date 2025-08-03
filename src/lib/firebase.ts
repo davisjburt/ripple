@@ -2,12 +2,13 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp, doc, setDoc, writeBatch, getDoc, updateDoc, collectionGroup, onSnapshot, Unsubscribe, orderBy, limit } from 'firebase/firestore';
+import { getStorage } from "firebase/storage";
 
 
 const firebaseConfig = {
   "projectId": "ripple-video-calling",
   "appId": "1:86590389569:web:f47a036c72d3f34ed1f5c0",
-  "storageBucket": "ripple-video-calling.firebasestorage.app",
+  "storageBucket": "ripple-video-calling.appspot.com",
   "apiKey": "AIzaSyB-VZ4LPHQO9lZMR01E1ggU6Pc_UfNXyhM",
   "authDomain": "ripple-video-calling.firebaseapp.com",
   "measurementId": "",
@@ -18,6 +19,7 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 export interface User {
   id: string;
@@ -183,4 +185,4 @@ export const getChatRooms = (userId: string, callback: (rooms: ChatRoom[]) => vo
 };
 
 
-export { app, auth, db };
+export { app, auth, db, storage };
