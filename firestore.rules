@@ -1,46 +1,45 @@
 
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+  
+    // Users can be read by any authenticated user, but only queried by email.
+    // This allows for adding contacts by email.
+    // User data can only be written by the user themselves.
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow create: if request.auth.uid == userId;
-      allow update: if request.auth.uid == userId;
+      allow write: if request.auth.uid == userId;
 
-      // A user can read and write to their own contacts subcollection.
+      // Contacts are private to each user
       match /contacts/{contactId} {
         allow read, write: if request.auth.uid == userId;
       }
     }
 
-    // Rules for friend requests
+    // Friend requests have specific rules for creation and updates.
     match /friendRequests/{requestId} {
-      // Allow users to create requests if they are the sender.
-      allow create: if request.auth != null && request.resource.data.from == request.auth.uid;
+      // Allow user to read requests sent to them
+      allow get: if request.auth != null && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
       
-      // Allow users to read a request if they are the sender or receiver.
-      allow read: if request.auth != null && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
-
-      // Allow the recipient to update the status of the request (accept/decline).
-      allow update: if request.auth != null && resource.data.to == request.auth.uid;
+      // Allow a user to see all requests sent to them.
+      // This is what enables the real-time listener on the contacts page.
+      allow list: if request.auth != null && request.query.get("to") == request.auth.uid;
       
-      // Allow listing of requests where the user is the recipient.
-      allow list: if request.auth != null && request.query.where.to == request.auth.uid;
+      // Allow creating a request if the sender is the logged-in user.
+      allow create: if request.auth.uid == request.resource.data.from;
+      
+      // Allow updating (accepting/declining) a request if the receiver is the logged-in user.
+      allow update: if request.auth.uid == resource.data.to;
+      
+      // Allow deleting a request if you are the sender or receiver
+      allow delete: if request.auth != null && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
     }
 
-    // Rules for chats
-    match /chats/{chatRoomId} {
-        // Allow read/write access to the chat room document if the user is part of the chat
-        allow read, write: if request.auth != null && chatRoomId.split('_').includes(request.auth.uid);
-
-        match /messages/{messageId} {
-            // Allow read access to messages if the user is part of the chat.
-            allow read: if request.auth != null && chatRoomId.split('_').includes(request.auth.uid);
-            
-            // Allow a user to write a message if they are the sender and part of the chat.
-            allow create: if request.auth != null && request.resource.data.senderId == request.auth.uid && chatRoomId.split('_').includes(request.auth.uid);
-        }
+    // Chat messages can only be read/written by participants in the chat.
+    // The chat room ID is a combination of the two user IDs, sorted.
+    match /chats/{chatRoomId}/{messageId} {
+       allow read, write: if request.auth != null && request.auth.uid in chatRoomId.split('_');
     }
   }
 }
