@@ -222,7 +222,6 @@ export const onIncomingCall = (userId: string, callback: (call: Call | null) => 
     const callsQuery = query(
         collection(db, 'calls'),
         where('receiverId', '==', userId),
-        where('status', '==', 'ringing'),
         orderBy('createdAt', 'desc'),
         limit(1)
     );
@@ -233,7 +232,14 @@ export const onIncomingCall = (userId: string, callback: (call: Call | null) => 
             return;
         }
         const callDoc = snapshot.docs[0];
-        callback({ id: callDoc.id, ...callDoc.data() } as Call);
+        const callData = callDoc.data() as Call;
+
+        // Filter for 'ringing' status on the client
+        if (callData.status === 'ringing') {
+            callback({ id: callDoc.id, ...callData });
+        } else {
+            callback(null);
+        }
     });
 };
 
