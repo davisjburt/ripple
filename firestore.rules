@@ -4,56 +4,33 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if a user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Helper function to check if the user is the owner of the document
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-    
-    // Users can be read by any authenticated user, but only the user themselves can write.
-    // This allows for looking up users to start a chat or send a friend request.
+    // Users can be read by any authenticated user, but only the user can write to their own document.
+    // This allows for searching for users by email to send friend requests.
     match /users/{userId} {
-      allow read, get: if isAuthenticated();
-      allow write: if isOwner(userId);
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId;
 
-      // A user can only access their own contacts list.
+      // Contacts are private to each user.
       match /contacts/{contactId} {
-        allow read, list: if isOwner(userId);
+        allow read, write: if request.auth.uid == userId;
       }
     }
-    
-    // Friend requests
+
+    // Friend requests can be created by any authenticated user.
+    // They can only be read if the request is to or from the current user.
+    // They can only be updated (accepted/declined) by the recipient.
     match /friendRequests/{requestId} {
-      // Allow creating a request if authenticated and the 'from' field is the user's own ID.
-      allow create: if isAuthenticated() && request.resource.data.from == request.auth.uid;
-      
-      // Allow reading a request only if you are the sender or receiver.
-      allow get: if isAuthenticated() && (request.resource.data.from == request.auth.uid || request.resource.data.to == request.auth.uid);
-      
-      // Allow updating a request (e.g., to accept/decline) only if you are the recipient.
-      allow update: if isAuthenticated() && resource.data.to == request.auth.uid;
-      
-      // Allow deleting a request only if you are the sender or receiver.
-      allow delete: if isAuthenticated() && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
-      
-      // Allow listing requests where you are the recipient. This is for the friend requests page.
-      allow list: if isAuthenticated() && request.query.where.to == request.auth.uid;
+      allow create: if request.auth != null;
+      allow read, update: if request.auth.uid == resource.data.to || request.auth.uid == resource.data.from;
     }
 
-    // Chats
+    // A user can list chats they are a participant in.
     match /chats/{chatId} {
-        // A user can read, write, or list chats only if their UID is in the 'participants' array.
-      allow read, write: if isAuthenticated() && request.auth.uid in resource.data.participants;
-      allow list: if isAuthenticated() && request.query.where.participants.hasAny([request.auth.uid]);
+      allow read, write: if request.auth.uid in resource.data.participants;
 
-      // Messages sub-collection
+      // Messages can be read or written only by participants of the chat.
       match /messages/{messageId} {
-         // To read/write a message, you must be a participant in the parent chat room.
-         allow read, write: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+        allow read, write: if request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
       }
     }
   }
