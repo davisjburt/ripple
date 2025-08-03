@@ -260,8 +260,14 @@ export const answerCall = async (invitationId: string) => {
 // 4. Receiver or caller declines/ends the call
 export const declineCall = async (invitationId: string) => {
     const invitationRef = doc(db, 'callInvitations', invitationId);
-    // Can either update status or delete the doc. Deleting is cleaner for ended/declined calls.
-    await deleteDoc(invitationRef);
+    const invitationSnap = await getDoc(invitationRef);
+    if(invitationSnap.exists()){
+        const callId = invitationSnap.data().callId;
+        if(callId) {
+             await deleteDoc(doc(db, 'calls', callId));
+        }
+        await deleteDoc(invitationRef);
+    }
 };
 
 
