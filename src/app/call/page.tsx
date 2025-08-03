@@ -51,8 +51,23 @@ export default function CallPage() {
     const contactName = searchParams.get('contactName');
     
     const { peers, isConnected } = useP2P(sessionId, localStream);
+    const participants = Object.values(peers);
+
+    const [callTitle, setCallTitle] = useState(
+      contactName ? `Call with ${contactName}` : 'Project Phoenix Kick-off'
+    );
+
+    useEffect(() => {
+      if (participants.length > 0) {
+        const otherParticipantNames = participants.map(p => p.name).join(', ');
+        setCallTitle(`Call with ${otherParticipantNames}`);
+      } else if (contactName) {
+        setCallTitle(`Calling ${contactName}...`);
+      } else {
+        setCallTitle('Waiting for others to join...');
+      }
+    }, [participants, contactName]);
     
-    const callTitle = contactName ? `Call with ${contactName}` : 'Project Phoenix Kick-off';
 
     useEffect(() => {
         const getCameraPermission = async () => {
@@ -104,7 +119,6 @@ export default function CallPage() {
         }
     }, [isCameraOn, isMicOn, localStream]);
 
-    const participants = Object.values(peers);
     const gridColsClass = participants.length <= 1 ? 'grid-cols-1' : (participants.length <= 4 ? 'grid-cols-2' : 'grid-cols-3');
     const gridRowsClass = participants.length === 0 ? 'grid-rows-1' : `grid-rows-${Math.ceil((participants.length + 1) / (participants.length <= 1 ? 1 : (participants.length <= 4 ? 2 : 3)))}`;
 
