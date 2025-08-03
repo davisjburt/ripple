@@ -1,4 +1,5 @@
 
+
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp, doc, setDoc, writeBatch, getDoc, updateDoc, collectionGroup, onSnapshot, Unsubscribe, orderBy, limit, deleteDoc } from 'firebase/firestore';
@@ -208,7 +209,7 @@ export const startCall = async (caller: User, receiver: User) => {
     const callDocRef = doc(collection(db, 'calls'));
     await setDoc(callDocRef, {
         createdAt: serverTimestamp(),
-        participants: [caller.uid, receiver.id]
+        participants: [caller.id, receiver.id]
     });
     
     // Create a separate invitation document for the receiver to listen to
@@ -216,7 +217,7 @@ export const startCall = async (caller: User, receiver: User) => {
     await setDoc(invitationRef, {
         callId: callDocRef.id,
         caller: {
-            id: caller.uid,
+            id: caller.id,
             name: caller.displayName,
             photoURL: caller.photoURL,
         },

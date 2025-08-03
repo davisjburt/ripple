@@ -35,9 +35,10 @@ import {
   handleFriendRequest,
   User,
   FriendRequest,
-  startCall
+  startCall,
+  db
 } from '@/lib/firebase';
-import { onSnapshot } from 'firebase/firestore';
+import { onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 
 
@@ -113,17 +114,14 @@ export default function ContactsPage() {
   const handleStartCall = async (contact: User) => {
     if (!user) return;
     try {
-      // The `user` object from useAuth is the Firebase Auth user, not our Firestore user object.
-      // We need to create a `User` object that matches our interface.
-      const caller: User = {
-        id: user.uid,
-        uid: user.uid,
-        displayName: user.displayName || 'Anonymous',
-        email: user.email || '',
-        photoURL: user.photoURL || '',
-      };
-      const { callId } = await startCall(caller, contact);
-      router.push(`/call?id=${callId}&contactName=${encodeURIComponent(contact.displayName)}`);
+        const callerDoc = await getDoc(doc(db, 'users', user.uid));
+        if (!callerDoc.exists()) {
+            throw new Error("Could not find your user profile.");
+        }
+        const caller = { id: callerDoc.id, ...callerDoc.data() } as User;
+      
+        const { callId } = await startCall(caller, contact);
+        router.push(`/call?id=${callId}&contactName=${encodeURIComponent(contact.displayName)}`);
     } catch (error) {
       console.error("Failed to start call:", error);
       toast({
