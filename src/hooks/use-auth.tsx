@@ -3,9 +3,10 @@
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { Spinner } from '@/components/ui/spinner';
 import { usePathname, useRouter } from 'next/navigation';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface AuthContextType {
   user: User | null;
@@ -24,7 +25,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const pathname = usePathname();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        // User is signed in, check if they exist in Firestore
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (!userDocSnap.exists()) {
+          // User exists in Auth but not in Firestore, let's sync them.
+          const photoURL = user.photoURL || `https://placehold.co/100x100/E9E9F0/333?text=${user.displayName?.charAt(0) || 'U'}`;
+          try {
+            await setDoc(userDocRef, {
+              uid: user.uid,
+              displayName: user.displayName,
+              email: user.email?.toLowerCase(),
+              photoURL: photoURL,
+            });
+          } catch (error) {
+            console.error("Error syncing user to Firestore:", error);
+          }
+        }
+      }
       setUser(user);
       setLoading(false);
     });
