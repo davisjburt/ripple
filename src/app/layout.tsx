@@ -13,6 +13,16 @@ import { AuthProvider } from '@/hooks/use-auth';
 function AppContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAuthPage = pathname === '/login' || pathname === '/signup';
+  const isCallPage = pathname === '/call';
+
+  if (isCallPage) {
+      return (
+           <AuthProvider>
+                {children}
+                <Toaster />
+           </AuthProvider>
+      )
+  }
 
   return (
     <AuthProvider>

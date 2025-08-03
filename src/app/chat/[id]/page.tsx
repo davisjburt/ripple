@@ -18,6 +18,8 @@ import {
   orderBy,
   doc,
   getDoc,
+  setDoc,
+  getDocs,
 } from 'firebase/firestore';
 import { ArrowLeft, SendHorizonal } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
@@ -58,13 +60,11 @@ export default function ChatPage() {
         if (contactDoc.exists()) {
             setContact({ id: contactDoc.id, ...contactDoc.data() } as Contact);
         } else {
-            // Handle case where contact doesn't exist
             router.push('/contacts');
         }
     };
     getContact();
 
-    // Generate a unique chat room ID
     const chatRoomId = [user.uid, contactId].sort().join('_');
 
     const q = query(
@@ -84,7 +84,6 @@ export default function ChatPage() {
   }, [user, contactId, router]);
 
    useEffect(() => {
-    // Scroll to bottom when messages change
     if (scrollAreaRef.current) {
         const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
         if (viewport) {
@@ -96,9 +95,30 @@ export default function ChatPage() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !user || !contactId) return;
+    if (!newMessage.trim() || !user || !contactId || !contact) return;
 
     const chatRoomId = [user.uid, contactId].sort().join('_');
+    const chatRoomRef = doc(db, 'chats', chatRoomId);
+    
+    // Check if chat room exists, if not create it with participants info
+    const chatRoomSnap = await getDoc(chatRoomRef);
+    if (!chatRoomSnap.exists()) {
+        await setDoc(chatRoomRef, {
+            participants: [user.uid, contact.id],
+            users: {
+                [user.uid]: {
+                    displayName: user.displayName,
+                    photoURL: user.photoURL,
+                    id: user.uid
+                },
+                [contact.id]: {
+                    displayName: contact.displayName,
+                    photoURL: contact.photoURL,
+                    id: contact.id
+                }
+            }
+        });
+    }
 
     await addDoc(collection(db, 'chats', chatRoomId, 'messages'), {
       text: newMessage,
@@ -110,14 +130,19 @@ export default function ChatPage() {
   };
   
   if (!contact) {
-    return <div className="flex items-center justify-center h-full">Loading...</div>
+    return (
+        <div className="hidden md:flex flex-col items-center justify-center h-full w-full bg-background">
+            <MessageSquare className="w-16 h-16 text-muted-foreground" />
+            <p className="mt-4 text-muted-foreground">Select a chat to start messaging</p>
+        </div>
+    )
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-theme(spacing.14))] bg-muted/30">
+    <div className="flex flex-col h-screen bg-muted/30 w-full">
         <header className="p-4 border-b flex items-center gap-4 bg-background">
             <Button variant="ghost" size="icon" className="md:hidden" asChild>
-                <Link href="/contacts">
+                <Link href="/chat">
                     <ArrowLeft />
                 </Link>
             </Button>
@@ -160,9 +185,11 @@ export default function ChatPage() {
                     >
                     {msg.text}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                        {new Date(msg.timestamp?.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </div>
+                    {msg.timestamp && (
+                         <div className="text-xs text-muted-foreground mt-1">
+                            {new Date(msg.timestamp?.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                    )}
                 </div>
                 {isYou && (
                     <Avatar className="w-8 h-8">
@@ -191,4 +218,3 @@ export default function ChatPage() {
     </div>
   );
 }
-

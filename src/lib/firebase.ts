@@ -1,7 +1,7 @@
 
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp, doc, setDoc, writeBatch, getDoc, updateDoc } from 'firebase/firestore';
+import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp, doc, setDoc, writeBatch, getDoc, updateDoc, collectionGroup } from 'firebase/firestore';
 
 
 const firebaseConfig = {
@@ -118,7 +118,6 @@ export const handleFriendRequest = async (requestId: string, accept: boolean) =>
         return;
     }
 
-    // Accept the request
     const requestDoc = await getDoc(requestRef);
     if (!requestDoc.exists()) throw new Error("Request not found.");
     
@@ -136,17 +135,14 @@ export const handleFriendRequest = async (requestId: string, accept: boolean) =>
     const toUserData = { ...toUserDoc.data(), id: toUserDoc.id };
 
 
-    // Use a batch write to perform multiple operations atomically
     const batch = writeBatch(db);
 
-    // Add each user to the other's contacts subcollection
     const fromContactRef = doc(db, 'users', from, 'contacts', to);
     batch.set(fromContactRef, toUserData);
 
     const toContactRef = doc(db, 'users', to, 'contacts', from);
     batch.set(toContactRef, fromUserData);
 
-    // Update the request status to 'accepted'
     batch.update(requestRef, { status: 'accepted' });
 
     await batch.commit();

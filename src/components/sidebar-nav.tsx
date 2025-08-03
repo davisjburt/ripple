@@ -14,6 +14,7 @@ import { useAuth } from '@/hooks/use-auth';
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/contacts', label: 'Contacts', icon: Users },
+  { href: '/chat', label: 'Chats', icon: MessageSquare },
   { href: '/call', label: 'Start Call', icon: Phone },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -35,7 +36,7 @@ export function SidebarNav() {
         <SidebarMenuItem key={item.href}>
             <Link href={item.href} passHref>
               <SidebarMenuButton
-                isActive={pathname === item.href}
+                isActive={pathname === item.href || (item.href === '/chat' && isChatPage)}
                 tooltip={item.label}
               >
                 <item.icon />
@@ -44,20 +45,6 @@ export function SidebarNav() {
             </Link>
         </SidebarMenuItem>
       ))}
-      
-       {user && isChatPage && (
-         <SidebarMenuItem>
-            <Link href={pathname} passHref>
-                <SidebarMenuButton
-                isActive={true}
-                tooltip={"Chat"}
-                >
-                <MessageSquare/>
-                <span>Chat</span>
-                </SidebarMenuButton>
-            </Link>
-         </SidebarMenuItem>
-      )}
       
       {!user && authItems.map((item) => (
           <SidebarMenuItem key={item.href}>
