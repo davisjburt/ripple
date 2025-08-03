@@ -1,8 +1,9 @@
+
 {
   "indexes": [
     {
       "collectionGroup": "callInvitations",
-      "queryScope": "COLLECTION",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         {
           "fieldPath": "receiverId",
