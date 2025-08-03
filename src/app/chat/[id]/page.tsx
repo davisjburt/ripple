@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -11,7 +10,6 @@ import { db } from '@/lib/firebase';
 import {
   collection,
   query,
-  where,
   onSnapshot,
   addDoc,
   serverTimestamp,
@@ -19,7 +17,6 @@ import {
   doc,
   getDoc,
   setDoc,
-  getDocs,
 } from 'firebase/firestore';
 import { ArrowLeft, SendHorizonal, MessageSquare } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
@@ -54,30 +51,36 @@ export default function ChatPage() {
   useEffect(() => {
     if (!user || !contactId) return;
 
-    // Fetch contact details
     const getContact = async () => {
-        const contactDoc = await getDoc(doc(db, 'users', contactId as string));
-        if (contactDoc.exists()) {
-            setContact({ id: contactDoc.id, ...contactDoc.data() } as Contact);
-        } else {
-            router.push('/contacts');
+        try {
+            const contactDoc = await getDoc(doc(db, 'users', contactId as string));
+            if (contactDoc.exists()) {
+                setContact({ id: contactDoc.id, ...contactDoc.data() } as Contact);
+            } else {
+                console.error("Contact not found");
+                router.push('/chat');
+            }
+        } catch (error) {
+            console.error("Error fetching contact:", error);
+            router.push('/chat');
         }
     };
     getContact();
 
     const chatRoomId = [user.uid, contactId].sort().join('_');
-
-    const q = query(
+    const messagesQuery = query(
       collection(db, 'chats', chatRoomId, 'messages'),
       orderBy('timestamp', 'asc')
     );
 
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+    const unsubscribe = onSnapshot(messagesQuery, (querySnapshot) => {
       const msgs: Message[] = [];
       querySnapshot.forEach((doc) => {
         msgs.push({ id: doc.id, ...doc.data() } as Message);
       });
       setMessages(msgs);
+    }, (error) => {
+        console.error("Error listening to messages:", error);
     });
 
     return () => unsubscribe();
@@ -100,38 +103,42 @@ export default function ChatPage() {
     const chatRoomId = [user.uid, contactId].sort().join('_');
     const chatRoomRef = doc(db, 'chats', chatRoomId);
     
-    // Check if chat room exists, if not create it with participants info
-    const chatRoomSnap = await getDoc(chatRoomRef);
-    if (!chatRoomSnap.exists()) {
-        await setDoc(chatRoomRef, {
-            participants: [user.uid, contact.id],
-            users: {
-                [user.uid]: {
-                    displayName: user.displayName,
-                    photoURL: user.photoURL,
-                    id: user.uid
-                },
-                [contact.id]: {
-                    displayName: contact.displayName,
-                    photoURL: contact.photoURL,
-                    id: contact.id
+    try {
+        const chatRoomSnap = await getDoc(chatRoomRef);
+        if (!chatRoomSnap.exists()) {
+            await setDoc(chatRoomRef, {
+                participants: [user.uid, contact.id],
+                users: {
+                    [user.uid]: {
+                        displayName: user.displayName,
+                        photoURL: user.photoURL,
+                        id: user.uid
+                    },
+                    [contact.id]: {
+                        displayName: contact.displayName,
+                        photoURL: contact.photoURL,
+                        id: contact.id
+                    }
                 }
-            }
+            });
+        }
+
+        await addDoc(collection(db, 'chats', chatRoomId, 'messages'), {
+          text: newMessage,
+          senderId: user.uid,
+          timestamp: serverTimestamp(),
         });
+
+        setNewMessage('');
+
+    } catch(error) {
+        console.error("Error sending message:", error);
     }
-
-    await addDoc(collection(db, 'chats', chatRoomId, 'messages'), {
-      text: newMessage,
-      senderId: user.uid,
-      timestamp: serverTimestamp(),
-    });
-
-    setNewMessage('');
   };
   
-  if (!contact) {
+  if (!contact || !user) {
     return (
-        <div className="hidden md:flex flex-col items-center justify-center h-full w-full bg-background">
+        <div className="flex flex-col items-center justify-center h-full w-full bg-background">
             <MessageSquare className="w-16 h-16 text-muted-foreground" />
             <p className="mt-4 text-muted-foreground">Select a chat to start messaging</p>
         </div>
@@ -209,8 +216,9 @@ export default function ChatPage() {
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder="Type your message..."
             className="flex-1"
+            disabled={!contact}
           />
-          <Button type="submit" size="icon" className="flex-shrink-0" disabled={!newMessage.trim()}>
+          <Button type="submit" size="icon" className="flex-shrink-0" disabled={!newMessage.trim() || !contact}>
             <SendHorizonal className="h-5 w-5" />
           </Button>
         </form>
