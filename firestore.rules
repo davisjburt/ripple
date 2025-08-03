@@ -1,40 +1,63 @@
 
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Users can read any profile, but only write to their own.
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update: if request.auth.uid == userId;
+      allow read;
+      allow write: if request.auth != null && request.auth.uid == userId;
+
+      // Users can manage their own contacts subcollection.
+      match /contacts/{contactId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
-    match /users/{userId}/contacts/{contactId} {
-        allow read, write: if request.auth.uid == userId;
-    }
-
+    // Rules for friend requests
     match /friendRequests/{requestId} {
-        allow read, create: if request.auth != null;
-        allow update: if request.auth.uid == resource.data.to;
+      // Allow users to create requests.
+      allow create: if request.auth != null;
+      // Allow users to read/update requests intended for them.
+      allow read, update: if request.auth != null && resource.data.to == request.auth.uid;
+      // Allow the sender to read the request status.
+      allow read: if request.auth != null && resource.data.from == request.auth.uid;
     }
 
+    // Rules for chat rooms
     match /chats/{chatId} {
-      allow read, write: if request.auth.uid in resource.data.participants;
-      
-      // Allow participants to read/write messages in a chat room
+        // Users can read/write a chat room if they are a participant.
+      allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
+        
+        // Rules for messages within a chat room
       match /messages/{messageId} {
-        allow read, write: if get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+        // Users can read messages if they are a participant of the parent chat room.
+        allow read: if request.auth != null && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+        // Users can write messages if they are the sender.
+        allow create: if request.auth != null && request.resource.data.senderId == request.auth.uid;
       }
     }
     
-    // Rule for call session chats
-    match /chats/{sessionId}/messages/{messageId} {
-        allow read, write: if request.auth != null;
+    // Rules for call invitations
+    match /callInvitations/{invitationId} {
+        // Allow authenticated users to create invitations.
+      allow create: if request.auth != null;
+        // Allow the intended receiver to read and update the invitation (to answer/decline).
+      allow read, update, delete: if request.auth != null && resource.data.receiverId == request.auth.uid;
+        // Allow the caller to read the invitation.
+      allow read: if request.auth != null && resource.data.caller.id == request.auth.uid;
     }
 
+    // Rules for the call signaling documents
     match /calls/{callId} {
-      allow read, create: if request.auth != null;
-      allow update, delete: if request.auth.uid == resource.data.receiverId || request.auth.uid == resource.data.caller.id;
+        // Allow participants of the call to read/write signaling data.
+      allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
+      
+        // ICE candidates subcollections
+      match /{candidateCollection}/{candidateId} {
+        allow read, create, delete: if request.auth != null && get(/databases/$(database)/documents/calls/$(callId)).data.participants.hasAny([request.auth.uid]);
+      }
     }
   }
 }
