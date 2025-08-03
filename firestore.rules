@@ -1,54 +1,61 @@
+
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Helper function to check if a user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
 
-    // Users: Can read anyone's profile, can only write to their own.
+    // Users: Can read anyone's public profile, can only write to their own.
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth.uid == userId;
+      allow read: if isAuthenticated();
+      allow update: if isAuthenticated() && request.auth.uid == userId;
+      // Allow creation when a user signs up.
+      allow create: if isAuthenticated();
 
-      // Contacts are a subcollection of users
+      // Contacts subcollection
       match /contacts/{contactId} {
-        allow read, write: if request.auth.uid == userId;
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
     }
 
-    // Friend Requests: Can create, can read if they are the sender or receiver.
-    // Can update status (accept/decline) only if they are the receiver.
+    // Friend Requests: Can only be created by auth users. 
+    // Can only be read/updated by sender or receiver.
     match /friendRequests/{requestId} {
-      allow read: if request.auth != null && (request.auth.uid == resource.data.from || request.auth.uid == resource.data.to);
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.from;
-      allow update: if request.auth != null && request.auth.uid == resource.data.to;
+       allow read, update: if isAuthenticated() && (request.auth.uid == resource.data.from || request.auth.uid == resource.data.to);
+       allow create: if isAuthenticated();
     }
     
-    // Chat rooms and messages
+    // Chats: Only participants can read/write messages.
     match /chats/{chatId} {
-        allow read, write: if request.auth.uid in resource.data.participants;
-        
-        match /messages/{messageId} {
-            allow read, write: if request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
-        }
+      allow read, write: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      
+      match /messages/{messageId} {
+        allow read, create: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+      }
     }
 
-    // Call Invitations: Can be created by anyone authenticated.
-    // Can be read, updated, or deleted only by the receiver.
+    // Call Invitations: Can be created by any authenticated user.
+    // Can only be read or updated by the intended receiver.
     match /callInvitations/{invitationId} {
-        allow create: if request.auth != null;
-        allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.receiverId;
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isAuthenticated() && request.auth.uid == resource.data.receiverId;
     }
 
-    // Calls: Can be created by authenticated users.
-    // Can be read/written to by participants of the call.
+    // Calls: Only participants can read, write, and create.
     match /calls/{callId} {
-      allow create: if request.auth != null;
-      allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
-
-      // Signaling candidates can be created and read by participants
+      allow create: if isAuthenticated();
+      allow read, update: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      
+      // ICE candidates can be added by either participant.
       match /callerCandidates/{candidateId} {
-        allow read, write: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
+        allow create: if isAuthenticated() && get(/databases/$(database)/documents/calls/$(callId)).data.participants.hasAny([request.auth.uid]);
       }
       match /receiverCandidates/{candidateId} {
-        allow read, write: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
+        allow create: if isAuthenticated() && get(/databases/$(database)/documents/calls/$(callId)).data.participants.hasAny([request.auth.uid]);
       }
     }
   }
