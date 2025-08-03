@@ -1,0 +1,81 @@
+
+import { Server } from 'socket.io';
+import type { NextApiRequest, NextApiResponse } from 'next';
+
+const users: Record<string, { id: string; name: string }[]> = {};
+const socketToRoom: Record<string, string> = {};
+
+
+// This is a workaround to attach the socket.io server to the Next.js server
+// In a real production environment, you might use a different setup.
+const ioHandler = (req: NextApiRequest, res: any) => {
+  if (!res.socket.server.io) {
+    console.log('*First use, starting socket.io');
+
+    const io = new Server(res.socket.server, {
+      path: "/api/socket",
+      addTrailingSlash: false,
+      cors: { origin: "*", methods: ["GET", "POST"] }
+    });
+
+    io.on('connection', (socket) => {
+      console.log('a user connected:', socket.id);
+
+      socket.on('join room', (roomID, name) => {
+        if (users[roomID]) {
+          users[roomID].push({ id: socket.id, name });
+        } else {
+          users[roomID] = [{ id: socket.id, name }];
+        }
+        socketToRoom[socket.id] = roomID;
+        const usersInThisRoom = users[roomID].filter(user => user.id !== socket.id);
+
+        console.log(`User ${name} (${socket.id}) joined room ${roomID}`);
+        console.log('Users in this room:', usersInThisRoom);
+
+        socket.emit('all users', usersInThisRoom);
+      });
+
+      socket.on('sending signal', (payload) => {
+        console.log(`User ${payload.callerID} sending signal to ${payload.userToSignal}`);
+        io.to(payload.userToSignal).emit('user joined', {
+          signal: payload.signal,
+          callerID: payload.callerID,
+          name: payload.name
+        });
+      });
+
+      socket.on('returning signal', (payload) => {
+        console.log(`User ${socket.id} returning signal to ${payload.userToSignal}`);
+        io.to(payload.userToSignal).emit('receiving returned signal', {
+          signal: payload.signal,
+          id: socket.id,
+        });
+      });
+
+      socket.on('disconnect', () => {
+        console.log('user disconnected:', socket.id);
+        const roomID = socketToRoom[socket.id];
+        let room = users[roomID];
+        if (room) {
+          room = room.filter(user => user.id !== socket.id);
+          users[roomID] = room;
+          if (room.length === 0) {
+            delete users[roomID];
+          }
+          // Use the correct syntax for broadcasting to a room
+          socket.to(roomID).emit('user left', socket.id);
+        }
+        delete socketToRoom[socket.id];
+      });
+    });
+
+    res.socket.server.io = io;
+  } else {
+    console.log('socket.io already running');
+  }
+  res.end();
+}
+
+
+export { ioHandler as GET, ioHandler as POST };
