@@ -4,6 +4,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/use-auth';
@@ -12,7 +13,7 @@ import { db, storage, auth } from '@/lib/firebase';
 import { updateProfile } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { Edit, User, Settings } from 'lucide-react';
+import { Edit, User, Settings, Camera, Upload } from 'lucide-react';
 import React, { useState, useRef } from 'react';
 import { Spinner } from '@/components/ui/spinner';
 
@@ -24,12 +25,15 @@ export default function SettingsPage() {
     const [previewUrl, setPreviewUrl] = useState<string | null>(user?.photoURL || null);
     const [loading, setLoading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const cameraInputRef = useRef<HTMLInputElement>(null);
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
             setNewImage(file);
             setPreviewUrl(URL.createObjectURL(file));
+            setIsDialogOpen(false); // Close dialog after selection
         }
     };
 
@@ -49,16 +53,13 @@ export default function SettingsPage() {
             const uploadResult = await uploadBytes(storageRef, newImage);
             const downloadURL = await getDownloadURL(uploadResult.ref);
 
-            // Update Firebase Auth profile
-            await updateProfile(auth.currentUser!, { photoURL: downloadURL });
+            if (auth.currentUser) {
+                await updateProfile(auth.currentUser, { photoURL: downloadURL });
+            }
             
-            // Update Firestore user document
             const userDocRef = doc(db, 'users', user.uid);
             await updateDoc(userDocRef, { photoURL: downloadURL });
             
-            // Also update the photoURL in contacts of other users
-            // This is a more complex operation and can be added later if needed
-
             setPreviewUrl(downloadURL);
             setNewImage(null);
             toast({
@@ -107,15 +108,37 @@ export default function SettingsPage() {
                                             {user.displayName?.charAt(0) || 'U'}
                                         </AvatarFallback>
                                     </Avatar>
-                                     <Button
-                                        size="icon"
-                                        variant="outline"
-                                        className="absolute bottom-0 right-0 rounded-full h-8 w-8 bg-background"
-                                        onClick={() => fileInputRef.current?.click()}
-                                    >
-                                        <Edit className="h-4 w-4" />
-                                        <span className="sr-only">Change picture</span>
-                                    </Button>
+                                    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                                     <DialogTrigger asChild>
+                                        <Button
+                                            size="icon"
+                                            variant="outline"
+                                            className="absolute bottom-0 right-0 rounded-full h-8 w-8 bg-background"
+                                        >
+                                            <Edit className="h-4 w-4" />
+                                            <span className="sr-only">Change picture</span>
+                                        </Button>
+                                     </DialogTrigger>
+                                     <DialogContent>
+                                        <DialogHeader>
+                                            <DialogTitle>Change Profile Picture</DialogTitle>
+                                            <DialogDescription>
+                                                Choose a new photo from your files or take a new one.
+                                            </DialogDescription>
+                                        </DialogHeader>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+                                            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+                                                <Upload className="mr-2 h-4 w-4" />
+                                                Upload from files
+                                            </Button>
+                                            <Button variant="outline" onClick={() => cameraInputRef.current?.click()}>
+                                                <Camera className="mr-2 h-4 w-4" />
+                                                Take a photo
+                                            </Button>
+                                        </div>
+                                     </DialogContent>
+                                    </Dialog>
+
                                     <Input 
                                         type="file" 
                                         className="hidden" 
@@ -123,6 +146,14 @@ export default function SettingsPage() {
                                         onChange={handleFileChange}
                                         accept="image/png, image/jpeg, image/gif"
                                      />
+                                     <Input
+                                        type="file"
+                                        className="hidden"
+                                        ref={cameraInputRef}
+                                        onChange={handleFileChange}
+                                        accept="image/*"
+                                        capture="environment"
+                                    />
                                 </div>
                                 <div>
                                     <h3 className="text-lg font-semibold">{user.displayName}</h3>
