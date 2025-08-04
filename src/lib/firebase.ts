@@ -50,20 +50,23 @@ export interface ChatRoom {
   };
 }
 
-// This interface is for alerting the receiver of an incoming call.
-// The actual WebRTC signaling data will be stored inside the call document itself.
-export interface CallInvitation {
+export interface Call {
     id: string;
-    // The call document ID in the 'calls' collection
-    callId: string;
+    type: 'direct' | 'instant';
     caller: {
         id: string;
         name: string;
         photoURL: string;
     };
-    receiverId: string;
-    status: 'ringing' | 'answered' | 'declined' | 'missed';
+    receiver?: {
+        id: string;
+        name: string;
+        photoURL: string;
+    };
+    status: 'ringing' | 'answered' | 'declined' | 'missed' | 'active' | 'ended';
     createdAt: any;
+    offer?: any;
+    answer?: any;
 }
 
 
@@ -203,34 +206,32 @@ export const getChatRooms = (userId: string, callback: (rooms: ChatRoom[]) => vo
 
 // --- Call Signaling Functions ---
 
-// 1. Initiator creates a call document and a call invitation
 export const startCall = async (caller: User, receiver: User) => {
-    // Create the main call document for WebRTC signaling
     const callDocRef = doc(collection(db, 'calls'));
-    
-    // Create a separate invitation document for the receiver to listen to
-    const invitationRef = doc(collection(db, 'callInvitations'));
-    await setDoc(invitationRef, {
-        callId: callDocRef.id,
+    await setDoc(callDocRef, {
+        type: 'direct',
         caller: {
             id: caller.uid,
             name: caller.displayName,
             photoURL: caller.photoURL,
         },
-        receiverId: receiver.id,
+        receiver: {
+            id: receiver.id,
+            name: receiver.displayName,
+            photoURL: receiver.photoURL
+        },
         status: 'ringing',
         createdAt: serverTimestamp(),
     });
 
-    // We return both IDs to the caller
-    return { callId: callDocRef.id, invitationId: invitationRef.id };
+    return callDocRef.id;
 }
 
-// 2. Receiver listens for incoming call invitations
-export const onIncomingCall = (userId: string, callback: (call: CallInvitation | null) => void) => {
+
+export const onIncomingCall = (userId: string, callback: (call: Call | null) => void) => {
     const invitationsQuery = query(
-        collection(db, 'callInvitations'),
-        where('receiverId', '==', userId),
+        collection(db, 'calls'),
+        where('receiver.id', '==', userId),
         where('status', '==', 'ringing'),
         orderBy('createdAt', 'desc'),
         limit(1)
@@ -241,65 +242,52 @@ export const onIncomingCall = (userId: string, callback: (call: CallInvitation |
             callback(null);
             return;
         }
-        const ringingInvitationDoc = snapshot.docs[0];
-        const ringingInvitation = { id: ringingInvitationDoc.id, ...ringingInvitationDoc.data() } as CallInvitation;
-        callback(ringingInvitation);
+        const ringingCallDoc = snapshot.docs[0];
+        const ringingCall = { id: ringingCallDoc.id, ...ringingCallDoc.data() } as Call;
+        callback(ringingCall);
     }, (error) => {
         console.error("Error listening for incoming calls:", error);
         callback(null);
     });
 };
 
-// 3. Receiver accepts the call
-export const answerCall = async (invitationId: string) => {
-    const invitationRef = doc(db, 'callInvitations', invitationId);
-    await updateDoc(invitationRef, { status: 'answered' });
+export const answerCall = async (callId: string) => {
+    const callRef = doc(db, 'calls', callId);
+    await updateDoc(callRef, { status: 'answered' });
 };
 
-// 4. Receiver or caller declines a direct call
-export const declineOrEndCall = async (invitationId: string) => {
+export const declineOrEndCall = async (callId: string) => {
     try {
-        const invitationRef = doc(db, 'callInvitations', invitationId);
-        // Just update status. The caller will handle full cleanup.
-        const invitationSnap = await getDoc(invitationRef);
-        if(invitationSnap.exists()){
-            await updateDoc(invitationRef, { status: 'declined' });
+        const callRef = doc(db, 'calls', callId);
+        const callSnap = await getDoc(callRef);
+        if(callSnap.exists()){
+            // Update status to allow the other user to know the call was declined/ended
+            await updateDoc(callRef, { status: 'declined' });
+            // The caller/receiver will then call leaveCall to do the full cleanup.
         }
     } catch (error) {
         console.error("Error declining call: ", error);
     }
 };
 
-// 5. Initiator or Receiver leaves a direct call and cleans everything up
-export const leaveCall = async (invitationId: string) => {
+export const leaveCall = async (callId: string) => {
      try {
-        const invitationRef = doc(db, 'callInvitations', invitationId);
-        const invitationSnap = await getDoc(invitationRef);
+        const callRef = doc(db, 'calls', callId);
+        const callSnap = await getDoc(callRef);
 
-        if(invitationSnap.exists()){
-            const callId = invitationSnap.data().callId;
+        if(callSnap.exists()){
             const batch = writeBatch(db);
             
-            if (callId) {
-                const callDocRef = doc(db, 'calls', callId);
-                const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
-                const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
-                
-                const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
-                callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
-
-                const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
-                receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
-                
-                // Check if call doc exists before trying to delete
-                const callDocSnap = await getDoc(callDocRef);
-                if (callDocSnap.exists()) {
-                    batch.delete(callDocRef);
-                }
-            }
+            const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
+            const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
             
-            batch.delete(invitationRef);
+            const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
+            callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
 
+            const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
+            receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+            
+            batch.delete(callRef);
             await batch.commit();
         }
     } catch (error) {
