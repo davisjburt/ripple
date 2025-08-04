@@ -2,7 +2,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, Copy } from 'lucide-react';
+import { ChevronLeft, Copy, X } from 'lucide-react';
 import Link from 'next/link';
 import { VideoControls } from '@/components/video-controls';
 import { ChatPanel } from '@/components/chat-panel';
@@ -12,7 +12,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Spinner } from '@/components/ui/spinner';
 import { db, leaveCall, Call } from '@/lib/firebase';
-import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, writeBatch, getDocs, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import Peer from 'simple-peer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -158,14 +158,16 @@ export default function CallPage() {
             const callDocRef = doc(db, 'calls', callId);
 
             // For instant meetings, initiator might need to create the doc.
-            const callDocSnap = await getDoc(callDocRef);
-            if (!callDocSnap.exists() && !isJoining) {
-                await setDoc(callDocRef, { 
-                    type: 'instant',
-                    caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
-                    status: 'active',
-                    createdAt: serverTimestamp() 
-                });
+            if (!isJoining) {
+                const callDocSnap = await getDoc(callDocRef);
+                if (!callDocSnap.exists()) {
+                    await setDoc(callDocRef, { 
+                        type: 'instant',
+                        caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
+                        status: 'active',
+                        createdAt: serverTimestamp() 
+                    });
+                }
             }
 
             try {
@@ -225,12 +227,12 @@ export default function CallPage() {
                                 });
                              }
                              if (data.answer) {
-                                if (!peerRef.current.destroyed && peerRef.current.signalingState !== 'stable') {
+                                if (peerRef.current && !peerRef.current.destroyed && peerRef.current.signalingState !== 'stable') {
                                     peerRef.current.signal(JSON.parse(data.answer));
                                 }
                              }
                         } else { // Is receiver/joiner
-                            if(data.offer && peer) {
+                            if(data.offer && peerRef.current) {
                                 if (!peerRef.current.destroyed && peerRef.current.signalingState !== 'stable') {
                                     peerRef.current.signal(JSON.parse(data.offer));
                                 }
