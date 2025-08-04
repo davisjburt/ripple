@@ -12,7 +12,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Spinner } from '@/components/ui/spinner';
 import { db, leaveCall, Call } from '@/lib/firebase';
-import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import Peer from 'simple-peer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -119,19 +119,19 @@ function CallRoom({ callId }: { callId: string }) {
                     if (!isComponentMounted || callStatus === 'ended') {
                          return;
                     }
-                    
-                    const data = snapshot.data() as Call;
-                    setCallData(data);
-                    
-                    if (!data) {
-                        if (callStatus !== 'ended') {
+
+                    if (!snapshot.exists()) {
+                         if (callStatus !== 'ended') {
                             toast({ title: 'Call not found or has ended.', variant: 'destructive' });
                             cleanup();
                             router.push('/');
                         }
                         return;
                     }
-
+                    
+                    const data = snapshot.data() as Call;
+                    setCallData(data);
+                    
                     if (data.status === 'ended') {
                         if (callStatus !== 'ended') {
                              toast({ title: `Call ended`, variant: 'destructive'});
@@ -142,16 +142,14 @@ function CallRoom({ callId }: { callId: string }) {
                     }
 
                     // This part ensures a call doc exists for instant meetings
-                    if (!snapshot.exists()) {
-                         const callDoc = await getDoc(callDocRef);
-                         if (!callDoc.exists()) {
-                            await setDoc(callDocRef, { 
-                                type: 'instant',
-                                caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
-                                status: 'active',
-                                createdAt: serverTimestamp() 
-                            });
-                         }
+                    const callDoc = await getDoc(callDocRef);
+                    if (!callDoc.exists()) {
+                        await setDoc(callDocRef, { 
+                            type: 'instant',
+                            caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
+                            status: 'active',
+                            createdAt: serverTimestamp() 
+                        });
                     }
 
                     if (!peerRef.current && (data.status === 'ringing' || data.status === 'answered' || data.status === 'active')) {
@@ -405,3 +403,5 @@ export default function CallPage() {
 
     return <CallRoom callId={callId} />;
 }
+
+    
