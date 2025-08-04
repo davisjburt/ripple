@@ -355,6 +355,11 @@ export default function CallPage() {
                             <p className="text-xs text-muted-foreground">
                                 Status: <span className="capitalize">{callStatus}</span>
                             </p>
+                            {!contactName && callId && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    Session ID: {callId}
+                                </p>
+                            )}
                         </div>
                     </div>
                     <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30" onClick={handleInvite}>
@@ -446,5 +451,3 @@ export default function CallPage() {
         </div>
     );
 }
-
-    
