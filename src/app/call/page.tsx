@@ -74,11 +74,14 @@ export default function CallPage() {
         if (callId && user) {
             try {
                 if (invitationId) {
+                    // This is a direct call, use the specific cleanup function
                     await leaveCall(invitationId);
                 } else { 
+                    // This is an instant meeting, cleanup only the call document
                     const callDocRef = doc(db, 'calls', callId);
                     const callDocSnap = await getDoc(callDocRef);
-                     if (callDocSnap.exists() && callDocSnap.data()?.initiator === user?.uid) {
+
+                     if (callDocSnap.exists()) {
                        const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
                        const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
                        const callerCandidatesSnap = await getDocs(callerCandidatesQuery);

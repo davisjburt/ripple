@@ -256,10 +256,11 @@ export const answerCall = async (invitationId: string) => {
     await updateDoc(invitationRef, { status: 'answered' });
 };
 
-// 4. Receiver or caller declines/ends a direct call
+// 4. Receiver or caller declines a direct call
 export const declineOrEndCall = async (invitationId: string) => {
     try {
         const invitationRef = doc(db, 'callInvitations', invitationId);
+        // Just update status. The caller will handle full cleanup.
         const invitationSnap = await getDoc(invitationRef);
         if(invitationSnap.exists()){
             await updateDoc(invitationRef, { status: 'declined' });
@@ -274,6 +275,7 @@ export const leaveCall = async (invitationId: string) => {
      try {
         const invitationRef = doc(db, 'callInvitations', invitationId);
         const invitationSnap = await getDoc(invitationRef);
+
         if(invitationSnap.exists()){
             const callId = invitationSnap.data().callId;
             const batch = writeBatch(db);
@@ -289,7 +291,11 @@ export const leaveCall = async (invitationId: string) => {
                 const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
                 receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
                 
-                batch.delete(callDocRef);
+                // Check if call doc exists before trying to delete
+                const callDocSnap = await getDoc(callDocRef);
+                if (callDocSnap.exists()) {
+                    batch.delete(callDocRef);
+                }
             }
             
             batch.delete(invitationRef);
@@ -303,5 +309,3 @@ export const leaveCall = async (invitationId: string) => {
 
 
 export { app, auth, db, storage };
-
-    
