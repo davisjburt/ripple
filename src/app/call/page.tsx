@@ -33,7 +33,7 @@ export default function CallPage() {
 
     const callId = searchParams.get('id');
     const contactName = searchParams.get('contactName');
-    const isJoining = searchParams.get('answered') === 'true';
+    const isJoining = searchParams.get('join') === 'true' || searchParams.get('answered') === 'true';
 
     const [callStatus, setCallStatus] = useState<'connecting' | 'connected' | 'ended'>('connecting');
     const [answerApplied, setAnswerApplied] = useState(false);
@@ -418,3 +418,5 @@ export default function CallPage() {
         </div>
     );
 }
+
+    

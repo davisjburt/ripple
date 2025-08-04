@@ -83,8 +83,9 @@ export default function Dashboard() {
               <CardDescription>Enter a session ID to join an ongoing call.</CardDescription>
             </CardHeader>
             <CardContent>
-              <form action={`/call?id=${sessionId}`} className="flex gap-2">
-                 <Input placeholder="Enter Session ID..." className="bg-background/80" value={sessionId} onChange={e => setSessionId(e.target.value)} />
+              <form action={`/call`} className="flex gap-2">
+                 <Input name="id" placeholder="Enter Session ID..." className="bg-background/80" value={sessionId} onChange={e => setSessionId(e.target.value)} />
+                 <input type="hidden" name="join" value="true" />
                  <Button type="submit" disabled={!sessionId}>Join</Button>
               </form>
             </CardContent>
@@ -131,3 +132,5 @@ export default function Dashboard() {
     </div>
   );
 }
+
+    
