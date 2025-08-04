@@ -41,21 +41,24 @@ export default function CallPage() {
 
 
     const cleanup = useCallback(async () => {
-        console.log('Cleaning up call...');
-        unsubscribes.current.forEach(unsub => unsub());
-        unsubscribes.current = [];
-
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => track.stop());
-            localStreamRef.current = null;
-        }
+        console.log('Cleaning up call...', callStatus);
+        
         if (peerRef.current && !peerRef.current.destroyed) {
             peerRef.current.destroy();
             peerRef.current = null;
         }
 
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(track => track.stop());
+            localStreamRef.current = null;
+        }
+        
         if (localVideoRef.current) localVideoRef.current.srcObject = null;
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+
+        unsubscribes.current.forEach(unsub => unsub());
+        unsubscribes.current = [];
+
 
         if (callStatus !== 'ended') {
           setCallStatus('ended');
@@ -64,13 +67,22 @@ export default function CallPage() {
         // Optional: Clean up the call document in Firestore
         if (callId) {
              try {
-                // To prevent both users from deleting it, maybe only the initiator does.
                 const callDoc = await getDoc(doc(db, 'calls', callId));
                 if (callDoc.exists() && !isJoining) {
+                   // Clean up ICE candidate subcollections
+                   const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
+                   const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
+                   const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
+                   const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
+                   const batch = writeBatch(db);
+                   callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                   receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                   await batch.commit();
+
                    await deleteDoc(doc(db, 'calls', callId));
                 }
             } catch (error) {
-                console.error("Error during cleanup: ", error);
+                console.error("Error during call document cleanup: ", error);
             }
         }
     }, [callId, isJoining, callStatus]);
@@ -129,7 +141,11 @@ export default function CallPage() {
             snapshot.docChanges().forEach(async (change) => {
                 if (change.type === 'added') {
                    if(peer && !peer.destroyed) {
-                     peer.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                     try {
+                        await peer.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                     } catch(err) {
+                        console.error("Error signaling candidate", err);
+                     }
                      // We can delete the candidate doc now that we've used it
                      await deleteDoc(change.doc.ref);
                    }
@@ -190,7 +206,11 @@ export default function CallPage() {
             const unsubscribe = onSnapshot(callDocRef, (snapshot) => {
                 const data = snapshot.data();
                 if (data?.answer && peerRef.current && !peerRef.current.destroyed && peerRef.current.signalingState !== 'stable') {
-                   peerRef.current.signal(JSON.parse(data.answer));
+                   try {
+                     peerRef.current.signal(JSON.parse(data.answer));
+                   } catch(err) {
+                     console.error("Error applying answer", err);
+                   }
                    // Once we have the answer, we don't need this listener anymore.
                    unsubscribe();
                 }
@@ -216,13 +236,18 @@ export default function CallPage() {
             peerRef.current = peer;
 
             const offer = JSON.parse(callDocSnap.data().offer);
-            peer.signal(offer);
-
+            
             peer.on('signal', async (answer) => {
                 if (answer.type === 'answer') {
                     await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
                 }
             });
+
+            try {
+                await peer.signal(offer);
+            } catch (err) {
+                 console.error("Error signaling offer", err);
+            }
             
             setupPeerListeners(peer, callId, false);
         };
@@ -242,8 +267,7 @@ export default function CallPage() {
              isComponentMounted = false;
              cleanup();
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user, callId]);
+    }, [user, callId, isJoining, cleanup, setupPeerListeners, toast]);
     
 
     const callTitle = contactName ? `Call with ${contactName}` : `Call`;
