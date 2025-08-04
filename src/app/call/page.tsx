@@ -27,7 +27,7 @@ export default function CallPage() {
     const isMobile = useIsMobile();
 
     const [isCameraOn, setIsCameraOn] = useState(true);
-    const [isMicOn, setIsMicOn] = useState(true);
+    const [isMicOn, setIsMicOn] = useState(false);
     const [hasCameraPermission, setHasCameraPermission] = useState(true);
     const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
 
@@ -185,6 +185,13 @@ export default function CallPage() {
                     stream.getTracks().forEach(track => track.stop());
                     return null;
                 };
+
+                // Apply initial mic state
+                const audioTrack = stream.getAudioTracks()[0];
+                if (audioTrack) {
+                    audioTrack.enabled = isMicOn;
+                }
+
                 localStreamRef.current = stream;
                 if (localVideoRef.current) {
                     localVideoRef.current.srcObject = stream;
