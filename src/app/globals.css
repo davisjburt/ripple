@@ -38,6 +38,11 @@ body {
   .dark {
     --background: 224 71% 4%;
     --foreground: 0 0% 98%;
+    --sidebar-background-start: 224 71% 8%;
+    --sidebar-background-end: 224 71% 4%;
+    --sidebar-border: 215 28% 17%;
+    --sidebar-accent: 215 28% 20%;
+    --sidebar-accent-foreground: 0 0% 98%;
     --card: 224 71% 4% / 0.5;
     --card-foreground: 0 0% 98%;
     --popover: 224 71% 4%;
