@@ -46,7 +46,6 @@ export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle
       label: isChatOpen ? 'Hide chat' : 'Show chat',
       icon: <MessageSquare />,
       onClick: onToggleChat,
-      className: 'md:hidden', // Only show on mobile
       isActive: isChatOpen
     },
   ];
