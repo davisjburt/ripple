@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -11,14 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -40,6 +31,7 @@ import {
 } from '@/lib/firebase';
 import { onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
+import { Separator } from '@/components/ui/separator';
 
 
 export default function ContactsPage() {
@@ -184,32 +176,28 @@ export default function ContactsPage() {
               </DialogContent>
             </Dialog>
           </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+          <CardContent className="p-0">
+             <div className="space-y-2">
+                {/* Headers - visible on md and up */}
+                 <div className="hidden md:flex items-center p-4 font-medium text-muted-foreground">
+                    <div className="flex-1">Name</div>
+                    <div className="w-28 text-right">Actions</div>
+                </div>
+                
                 {contacts.length === 0 && (
-                    <TableRow>
-                        <TableCell colSpan={2} className="text-center text-muted-foreground py-8">
-                            You haven't added any contacts yet.
-                        </TableCell>
-                    </TableRow>
+                    <div className="text-center text-muted-foreground py-12">
+                        You haven't added any contacts yet.
+                    </div>
                 )}
                 {contacts.map((contact, index) => (
-                  <motion.tr
+                  <motion.div
                     key={contact.id}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: index * 0.05 }}
-                    className="group"
+                    className="flex flex-col md:flex-row items-start md:items-center p-4 hover:bg-muted/50 transition-colors border-t"
                   >
-                    <TableCell>
-                      <div className="flex items-center gap-3">
+                    <div className="flex-1 flex items-center gap-3 mb-4 md:mb-0">
                         <Avatar>
                           <AvatarImage src={contact.photoURL} data-ai-hint="person portrait" />
                           <AvatarFallback>
@@ -222,24 +210,21 @@ export default function ContactsPage() {
                             {contact.email}
                           </div>
                         </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="opacity-100 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="icon" asChild>
+                    </div>
+                    <div className="w-full md:w-28 flex items-center justify-start md:justify-end gap-2">
+                        <Button variant="outline" size="sm" asChild className="flex-1 md:flex-initial">
                            <Link href={`/chat/${contact.id}`}>
-                                <MessageSquare className="h-5 w-5 text-muted-foreground" />
+                                <MessageSquare className="h-4 w-4 mr-2" />
+                                <span>Chat</span>
                            </Link>
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleStartCall(contact)}>
+                        <Button variant="outline" size="icon" onClick={() => handleStartCall(contact)}>
                             <Phone className="h-5 w-5 text-primary" />
                         </Button>
-                      </div>
-                    </TableCell>
-                  </motion.tr>
+                    </div>
+                  </motion.div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
           </CardContent>
         </Card>
       </motion.div>
@@ -257,45 +242,38 @@ export default function ContactsPage() {
                     <span>Friend Requests</span>
                 </CardTitle>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
-                 <Table>
-                    <TableHeader>
-                        <TableRow>
-                        <TableHead>From</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {friendRequests.map((request) => (
-                            <TableRow key={request.id}>
-                                <TableCell>
-                                    <div className="flex items-center gap-3">
-                                         <Avatar>
-                                            <AvatarImage src={request.fromPhotoURL} data-ai-hint="person portrait" />
-                                            <AvatarFallback>
-                                                {request.fromName?.split(' ').map(n => n[0]).join('')}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                        <div>
-                                            <div className="font-medium">{request.fromName}</div>
-                                            <div className="text-sm text-muted-foreground">{request.fromEmail}</div>
-                                        </div>
-                                    </div>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    <div className="flex items-center justify-end gap-2">
-                                        <Button variant="outline" size="icon" className="text-green-500 border-green-500 hover:bg-green-500/10 hover:text-green-600" onClick={() => respondToRequest(request.id, true)}>
-                                            <Check className="h-4 w-4" />
-                                        </Button>
-                                         <Button variant="outline" size="icon" className="text-red-500 border-red-500 hover:bg-red-500/10 hover:text-red-600" onClick={() => respondToRequest(request.id, false)}>
-                                            <X className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                 </Table>
+            <CardContent className="p-0">
+                 <div className="space-y-2">
+                     {/* Headers - visible on md and up */}
+                    <div className="hidden md:flex items-center p-4 font-medium text-muted-foreground">
+                        <div className="flex-1">From</div>
+                        <div className="w-28 text-right">Actions</div>
+                    </div>
+                    {friendRequests.map((request) => (
+                        <div key={request.id} className="flex flex-col md:flex-row items-start md:items-center p-4 hover:bg-muted/50 transition-colors border-t">
+                            <div className="flex-1 flex items-center gap-3 mb-4 md:mb-0">
+                                <Avatar>
+                                    <AvatarImage src={request.fromPhotoURL} data-ai-hint="person portrait" />
+                                    <AvatarFallback>
+                                        {request.fromName?.split(' ').map(n => n[0]).join('')}
+                                    </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                    <div className="font-medium">{request.fromName}</div>
+                                    <div className="text-sm text-muted-foreground">{request.fromEmail}</div>
+                                </div>
+                            </div>
+                            <div className="w-full md:w-28 flex items-center justify-start md:justify-end gap-2">
+                                <Button variant="outline" size="icon" className="text-green-500 border-green-500 hover:bg-green-500/10 hover:text-green-600" onClick={() => respondToRequest(request.id, true)}>
+                                    <Check className="h-4 w-4" />
+                                </Button>
+                                    <Button variant="outline" size="icon" className="text-red-500 border-red-500 hover:bg-red-500/10 hover:text-red-600" onClick={() => respondToRequest(request.id, false)}>
+                                    <X className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    ))}
+                 </div>
             </CardContent>
             </Card>
         </motion.div>
@@ -303,3 +281,5 @@ export default function ContactsPage() {
     </div>
   );
 }
+
+    
