@@ -99,14 +99,6 @@ export default function CallPage() {
         cleanup(shouldRedirect);
     }, [callId, user, cleanup]);
 
-    useEffect(() => {
-        if (!isMobile) {
-            setIsChatPanelOpen(true);
-        } else {
-            setIsChatPanelOpen(false);
-        }
-    }, [isMobile]);
-
     const handleCameraToggle = () => {
         if (localStreamRef.current) {
             const videoTrack = localStreamRef.current.getVideoTracks()[0];
