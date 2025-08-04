@@ -4,58 +4,97 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can read/write their own user document.
-    // They can only read other users' documents.
+    // Helper function to check if a user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if a user is a participant in a document
+    // (Used for chats and calls)
+    function isParticipant(docData) {
+      return request.auth.uid in docData.participants;
+    }
+
+    // =================================
+    // Users Collection
+    // =================================
     match /users/{userId} {
-      allow read, update, delete: if request.auth.uid == userId;
-      allow get: if request.auth != null;
-      
-      // A user can list their own contacts.
+      // Any authenticated user can read any user's profile (for searching/adding contacts)
+      allow read: if isAuthenticated();
+      // A user can only create their own user document
+      allow create: if request.auth.uid == userId;
+      // A user can only update their own profile
+      allow update: if request.auth.uid == userId;
+      // No one can delete user documents for now
+      allow delete: if false;
+
+      // Contacts Subcollection
       match /contacts/{contactId} {
-        allow read: if request.auth.uid == userId;
+         // A user can only read/write their own contacts list
+         allow read, write: if request.auth.uid == userId;
       }
     }
 
-    // Friend requests can be created by any authenticated user.
-    // They can only be read or updated by the recipient.
-    match /friendRequests/{requestId} {
-      allow create: if request.auth != null;
-      allow read, update: if request.auth.uid == resource.data.to;
-    }
-
-    // Chat documents can be read by participants.
-    // Messages can be read/written by participants.
+    // =================================
+    // Chats Collection
+    // =================================
     match /chats/{chatId} {
-      allow read, update: if request.auth.uid in resource.data.participants;
-      
+      // Allow read/get if the user is one of the participants
+      allow get: if isParticipant(resource.data);
+
+      // Allow listing chats only if the user is a participant
+      allow list: if request.auth.uid in request.query.where.participants;
+
+      // Allow creating a chat if the user is one of the participants in the new document
+      allow create: if isParticipant(request.resource.data);
+
+      // Messages Subcollection
       match /messages/{messageId} {
-        allow read, create: if request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        // Allow reading/writing messages if the user is a participant of the parent chat
+        allow read, write: if isParticipant(get(/databases/$(database)/documents/chats/$(chatId)).data);
       }
     }
 
-    // Calls can be created by any authenticated user.
-    // They can only be read/updated/deleted by participants.
-    // Candidates can be read/written by participants.
-    match /calls/{callId} {
-      allow create: if request.auth != null;
-      allow read, update, delete: if request.auth.uid in resource.data.participants;
-      
-      match /callerCandidates/{candidateId} {
-        allow read, create, delete: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-      }
-      match /receiverCandidates/{candidateId} {
-        allow read, create, delete: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-      }
+    // =================================
+    // Friend Requests Collection
+    // =================================
+    match /friendRequests/{requestId} {
+        // Any authenticated user can create a friend request
+        allow create: if isAuthenticated();
+        // Only the recipient can read or update the request (to accept/decline)
+        allow read, update: if request.auth.uid == resource.data.to;
+        // The creator or recipient can delete the request
+        allow delete: if request.auth.uid == resource.data.from || request.auth.uid == resource.data.to;
     }
-    
-    // Call invitations can be created by any authenticated user.
-    // They can be read/updated by the receiver.
-    // The query for ringing invitations by the receiver is allowed.
-    match /callInvitations/{invitationId} {
-       allow create: if request.auth != null;
-       allow read, update, delete: if request.auth.uid == resource.data.receiverId;
-       allow list: if request.auth.uid == request.query.where.receiverId 
-                    && request.query.where.status == 'ringing';
+
+    // =================================
+    // Call Invitations Collection
+    // =================================
+     match /callInvitations/{invitationId} {
+        // Any authenticated user can create an invitation
+        allow create: if isAuthenticated();
+        // Only the recipient can read it to see if they have a call
+        allow read, update, delete: if request.auth.uid == resource.data.receiverId;
+     }
+
+    // =================================
+    // Calls Collection (for WebRTC)
+    // =================================
+    match /calls/{callId} {
+        // Anyone authenticated can create a call document
+        allow create: if isAuthenticated();
+        
+        // Only participants can read or write to the call document (for offers/answers)
+        allow read, update: if isParticipant(resource.data);
+        
+        // Only participants can delete the call document
+        allow delete: if isParticipant(get(/databases/$(database)/documents/calls/$(callId)).data);
+
+        // ICE Candidates Subcollections
+        match /{candidateCollection}/{candidateId} {
+            // Only participants of the parent call can manage ICE candidates
+            allow read, write, delete: if isParticipant(get(/databases/$(database)/documents/calls/$(callId)).data);
+        }
     }
   }
 }
