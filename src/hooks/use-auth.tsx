@@ -30,23 +30,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const pathname = usePathname();
 
   useEffect(() => {
-    // This is the single, authoritative listener for auth state changes.
     const unsubscribe = onAuthStateChanged(auth, (authUser) => {
       if (authUser) {
-        // User is signed in.
-        // Now, set up a real-time listener to their Firestore document.
         const userDocRef = doc(db, 'users', authUser.uid);
-
+        
         const unsubscribeFirestore = onSnapshot(userDocRef, async (userDoc) => {
           if (userDoc.exists()) {
-            // Document exists, combine auth data with Firestore data
             const firestoreData = userDoc.data();
-            setUser({
-              ...authUser,
-              ...firestoreData,
-            } as User);
+            setUser({ ...authUser, ...firestoreData } as User);
           } else {
-            // First sign-in, document doesn't exist yet. Create it.
+             // This case might happen on first sign-in via a provider if doc creation is slow
+             // Or if the user document was manually deleted. We can re-create it.
             const photoURL = authUser.photoURL || `https://placehold.co/100x100/E9E9F0/333?text=${authUser.displayName?.charAt(0) || 'U'}`;
             const newUser = {
               uid: authUser.uid,
@@ -54,15 +48,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               email: authUser.email?.toLowerCase(),
               photoURL: photoURL,
             };
-            await setDoc(userDocRef, newUser);
-            // The onSnapshot listener will fire again with the new data,
-            // so we don't need to call setUser here.
+            await setDoc(userDocRef, newUser, { merge: true });
+            // The snapshot listener will be called again with the new data, setting the user.
           }
-           setLoading(false);
+          setLoading(false); // Ensure loading is false after we have user data.
+        }, (error) => {
+            console.error("Error with Firestore snapshot: ", error);
+            setLoading(false); // Also handle loading state on error
         });
-
-        // Return the firestore listener's cleanup function
+        
         return () => unsubscribeFirestore();
+
       } else {
         // User is signed out
         setUser(null);
@@ -70,7 +66,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     });
 
-    // Return the auth listener's cleanup function
     return () => unsubscribe();
   }, []);
 
