@@ -80,23 +80,24 @@ export default function CallPage() {
                 } else { 
                     // This is an instant meeting, cleanup only the call document
                     const callDocRef = doc(db, 'calls', callId);
-                    const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
-                    const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
-                    
-                    const batch = writeBatch(db);
-                    
-                    const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
-                    callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
-                    
-                    const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
-                    receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
-                    
                     const callDocSnap = await getDoc(callDocRef);
+
                     if(callDocSnap.exists()) {
+                        const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
+                        const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
+                        
+                        const batch = writeBatch(db);
+                        
+                        const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
+                        callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                        
+                        const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
+                        receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                        
                         batch.delete(callDocRef);
+                        
+                        await batch.commit();
                     }
-                    
-                    await batch.commit();
                 }
             } catch (error) {
                 console.error("Error during call document cleanup: ", error);
