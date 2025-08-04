@@ -92,13 +92,12 @@ function CallRoom({ callId }: { callId: string }) {
         }
     };
 
-    // Effect for initializing stream and listening to call doc
     useEffect(() => {
         if (!user || !callId) return;
 
         let isComponentMounted = true;
         
-        const initialize = async () => {
+        const initializeCall = async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 if (!isComponentMounted) {
@@ -113,32 +112,97 @@ function CallRoom({ callId }: { callId: string }) {
                 stream.getVideoTracks()[0].enabled = isCameraOn;
 
                 const callDocRef = doc(db, 'calls', callId);
-                const callDoc = await getDoc(callDocRef);
-
-                if (!callDoc.exists()) {
-                     // This is an instant meeting, create the doc
-                     await setDoc(callDocRef, {
-                        type: 'instant',
-                        caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
-                        status: 'active',
-                        createdAt: serverTimestamp()
-                    });
-                }
                 
-                const unsubCallDoc = onSnapshot(callDocRef, (snapshot) => {
-                     if (!isComponentMounted) return;
+                const unsubCallDoc = onSnapshot(callDocRef, async (snapshot) => {
+                     if (!isComponentMounted || callStatus === 'ended') return;
 
-                     if (!snapshot.exists()) {
-                        if (callStatus !== 'ended') {
-                            toast({ title: 'Call has ended.', variant: 'destructive' });
-                            cleanup();
-                            router.push('/');
+                    if (!snapshot.exists()) {
+                         // This is an instant meeting, create the doc if we are the initiator
+                        const isJoining = new URLSearchParams(window.location.search).has('join');
+                        if (!isJoining) {
+                            await setDoc(callDocRef, {
+                                type: 'instant',
+                                caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
+                                status: 'active',
+                                createdAt: serverTimestamp()
+                            });
+                        } else {
+                            if (callStatus !== 'ended') {
+                                toast({ title: 'Call has ended.', variant: 'destructive' });
+                                cleanup();
+                                router.push('/');
+                            }
                         }
                         return;
                     }
                     
                     const data = snapshot.data() as Call;
                     setCallData(data);
+                    
+                    if (!peerRef.current && localStreamRef.current) {
+                         const isInitiator = data.caller.id === user.uid;
+                         // For direct calls, the receiver waits for an offer.
+                        if (data.type === 'direct' && !isInitiator && !data.offer) {
+                            return;
+                        }
+
+                        const peer = new Peer({ initiator: isInitiator, trickle: true, stream: localStreamRef.current });
+                        peerRef.current = peer;
+                        
+                        peer.on('signal', async (signalData) => {
+                            if (callStatus === 'ended') return;
+                            if (signalData.type === 'offer') {
+                                await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
+                            } else if (signalData.type === 'answer') {
+                                await updateDoc(callDocRef, { answer: JSON.stringify(signalData), status: 'answered' });
+                            } else if (signalData.candidate) {
+                                const candidatesCollection = collection(db, 'calls', callId, isInitiator ? 'callerCandidates' : 'receiverCandidates');
+                                await addDoc(candidatesCollection, { candidate: JSON.stringify(signalData.candidate) });
+                            }
+                        });
+
+                        peer.on('stream', (remoteStream) => {
+                            if (remoteVideoRef.current) {
+                                remoteVideoRef.current.srcObject = remoteStream;
+                            }
+                            setCallStatus('connected');
+                        });
+                        
+                        peer.on('close', () => handleLeaveCall(true));
+                        peer.on('error', (err) => {
+                            console.error('Peer error:', err);
+                            toast({ title: 'Connection failed.', variant: 'destructive'});
+                            handleLeaveCall(true);
+                        });
+
+                        const listenForCandidates = (isInitiator: boolean) => {
+                            const remoteCandidatesCollection = collection(db, 'calls', callId, isInitiator ? 'receiverCandidates' : 'callerCandidates');
+                            const unsubscribeCandidates = onSnapshot(remoteCandidatesCollection, (snapshot) => {
+                                snapshot.docChanges().forEach(async (change) => {
+                                    if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
+                                        try {
+                                            peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                                            await deleteDoc(change.doc.ref);
+                                        } catch(err) {
+                                            console.error("Error signaling candidate", err);
+                                        }
+                                    }
+                                });
+                            });
+                            unsubscribes.current.push(unsubscribeCandidates);
+                        }
+                        listenForCandidates(isInitiator);
+                    }
+
+                    if (peerRef.current && !peerRef.current.destroyed) {
+                        const isInitiator = data.caller.id === user.uid;
+                        if (!isInitiator && data.offer && !peerRef.current.remoteAddress) {
+                            peerRef.current.signal(JSON.parse(data.offer));
+                        }
+                        if (isInitiator && data.answer && !peerRef.current.remoteAddress) {
+                            peerRef.current.signal(JSON.parse(data.answer));
+                        }
+                    }
                 });
                 unsubscribes.current.push(unsubCallDoc);
 
@@ -155,7 +219,7 @@ function CallRoom({ callId }: { callId: string }) {
             }
         };
 
-        initialize();
+        initializeCall();
 
         return () => {
              isComponentMounted = false;
@@ -163,84 +227,6 @@ function CallRoom({ callId }: { callId: string }) {
         }
     }, [user, callId]);
 
-    // Effect for handling Peer to Peer connection logic based on callData
-    useEffect(() => {
-        if (!callData || !localStreamRef.current || !user) return;
-        
-        const callDocRef = doc(db, 'calls', callId);
-        
-        // Don't create a new peer if one already exists or call has ended
-        if (peerRef.current || callData.status === 'ended' || callStatus === 'ended') return;
-
-        const isInitiator = callData.caller.id === user.uid;
-
-        // For direct calls, the receiver waits for an offer.
-        if (callData.type === 'direct' && !isInitiator && !callData.offer) {
-            return;
-        }
-
-        const peer = new Peer({ initiator: isInitiator, trickle: true, stream: localStreamRef.current });
-        peerRef.current = peer;
-
-        peer.on('signal', async (signalData) => {
-            if (callStatus === 'ended') return;
-            
-            if (signalData.type === 'offer') {
-                await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
-            } else if (signalData.type === 'answer') {
-                await updateDoc(callDocRef, { answer: JSON.stringify(signalData), status: 'answered' });
-            } else if (signalData.candidate) {
-                const candidatesCollection = collection(db, 'calls', callId, isInitiator ? 'callerCandidates' : 'receiverCandidates');
-                await addDoc(candidatesCollection, { candidate: JSON.stringify(signalData.candidate) });
-            }
-        });
-
-        peer.on('stream', (remoteStream) => {
-            if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = remoteStream;
-            }
-            setCallStatus('connected');
-        });
-        
-        peer.on('close', () => handleLeaveCall(true));
-        peer.on('error', (err) => {
-            console.error('Peer error:', err);
-            toast({ title: 'Connection failed.', variant: 'destructive'});
-            handleLeaveCall(true);
-        });
-
-        if (!isInitiator && callData.offer) {
-            if (!peer.destroyed) {
-                peer.signal(JSON.parse(callData.offer));
-            }
-        }
-        
-        if (isInitiator && callData.answer) {
-            if (!peer.destroyed) {
-                peer.signal(JSON.parse(callData.answer));
-            }
-        }
-
-        const listenForCandidates = (isInitiator: boolean) => {
-            const remoteCandidatesCollection = collection(db, 'calls', callId, isInitiator ? 'receiverCandidates' : 'callerCandidates');
-            const unsubscribeCandidates = onSnapshot(remoteCandidatesCollection, (snapshot) => {
-                snapshot.docChanges().forEach(async (change) => {
-                    if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
-                        try {
-                            peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
-                            await deleteDoc(change.doc.ref);
-                        } catch(err) {
-                            console.error("Error signaling candidate", err);
-                        }
-                    }
-                });
-            });
-            unsubscribes.current.push(unsubscribeCandidates);
-        }
-        listenForCandidates(isInitiator);
-
-    }, [callData, user, callId]);
-    
     const handleInvite = () => {
         const inviteLink = `${window.location.origin}/call?id=${callId}&join=true`;
         navigator.clipboard.writeText(inviteLink).then(() => {
@@ -316,7 +302,7 @@ function CallRoom({ callId }: { callId: string }) {
                                 </AlertDescription>
                             </Alert>
                          )}
-                         {isCameraOn && !localVideoRef.current?.srcObject && hasCameraPermission && (
+                         {isCameraOn && !localStreamRef.current && hasCameraPermission && (
                              <div className="absolute inset-0 flex items-center justify-center">
                                 <Spinner size="large" />
                              </div>
