@@ -2,7 +2,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, UserPlus, X } from 'lucide-react';
+import { ChevronLeft, UserPlus, X, Copy } from 'lucide-react';
 import Link from 'next/link';
 import { VideoControls } from '@/components/video-controls';
 import { ChatPanel } from '@/components/chat-panel';
@@ -33,7 +33,7 @@ export default function CallPage() {
 
     const callId = searchParams.get('id');
     const contactName = searchParams.get('contactName');
-    const isJoining = searchParams.get('join') === 'true' || searchParams.get('answered') === 'true';
+    const isJoining = searchParams.get('join') === 'true';
 
     const [callStatus, setCallStatus] = useState<'connecting' | 'connected' | 'ended'>('connecting');
     const [answerApplied, setAnswerApplied] = useState(false);
@@ -150,6 +150,7 @@ export default function CallPage() {
             snapshot.docChanges().forEach(async (change) => {
                 if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
                    try {
+                        // Avoid signaling race conditions
                         if (peerRef.current.signalingState !== 'stable' || isJoining) {
                              peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
                         }
@@ -182,6 +183,10 @@ export default function CallPage() {
                 const audioTrack = stream.getAudioTracks()[0];
                 if (audioTrack) {
                     audioTrack.enabled = isMicOn;
+                }
+                 const videoTrack = stream.getVideoTracks()[0];
+                if (videoTrack) {
+                    videoTrack.enabled = isCameraOn;
                 }
 
                 localStreamRef.current = stream;
@@ -308,8 +313,23 @@ export default function CallPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, callId, isJoining]);
     
+    const handleInvite = () => {
+        const inviteLink = window.location.href.replace('&answered=true', '') + '&join=true';
+        navigator.clipboard.writeText(inviteLink).then(() => {
+            toast({
+                title: "Invite Link Copied!",
+                description: "You can now share this link with others to join the call.",
+            });
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+             toast({
+                title: "Failed to copy link",
+                variant: 'destructive',
+            });
+        });
+    };
 
-    const callTitle = contactName ? `Call with ${contactName}` : `Call`;
+    const callTitle = contactName ? `Call with ${contactName}` : `Instant Meeting`;
 
     return (
         <div className="flex h-screen max-h-screen bg-black text-white overflow-hidden">
@@ -329,9 +349,9 @@ export default function CallPage() {
                             </p>
                         </div>
                     </div>
-                    <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30">
-                        <UserPlus className="mr-2 h-4 w-4" />
-                        Invite
+                    <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30" onClick={handleInvite}>
+                        <Copy className="mr-2 h-4 w-4" />
+                        Copy Invite Link
                     </Button>
                 </header>
 
@@ -418,5 +438,3 @@ export default function CallPage() {
         </div>
     );
 }
-
-    
