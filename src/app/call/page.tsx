@@ -61,7 +61,6 @@ export default function CallPage() {
     }, []);
 
     const handleLeaveCall = useCallback(async () => {
-        cleanup();
         if (callId && user) {
              try {
                 const callDocRef = doc(db, 'calls', callId);
@@ -85,6 +84,7 @@ export default function CallPage() {
                 console.error("Error during call document cleanup: ", error);
             }
         }
+        cleanup();
     }, [callId, user, cleanup]);
 
     const handleCameraToggle = () => {
@@ -363,5 +363,4 @@ export default function CallPage() {
             </aside>
         </div>
     );
-
-    
+}
