@@ -63,14 +63,12 @@ export default function CallPage() {
         unsubscribes.current.forEach(unsub => unsub());
         unsubscribes.current = [];
         
-        if (callStatus !== 'ended') {
-            setCallStatus('ended');
-        }
+        setCallStatus('ended');
 
         if(router && shouldRedirect) {
             router.push('/');
         }
-    }, [callStatus, router]);
+    }, [router]);
 
     const handleLeaveCall = useCallback(async (shouldRedirect = true) => {
         if (callId && user) {
@@ -437,3 +435,5 @@ export default function CallPage() {
         </div>
     );
 }
+
+    
