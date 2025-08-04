@@ -44,7 +44,7 @@ export function SidebarNav() {
                 isActive={pathname === item.href || (item.href === '/chat' && isChatPage)}
                 tooltip={item.label}
               >
-                <item.icon />
+                <item.icon className="h-5 w-5" />
                 <span>{item.label}</span>
               </SidebarMenuButton>
             </Link>
@@ -58,7 +58,7 @@ export function SidebarNav() {
               isActive={pathname === item.href}
               tooltip={item.label}
             >
-              <item.icon />
+              <item.icon className="h-5 w-5" />
               <span>{item.label}</span>
             </SidebarMenuButton>
           </Link>
