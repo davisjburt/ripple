@@ -229,13 +229,13 @@ export const startCall = async (caller: User, receiver: User) => {
 
 
 export const onIncomingCall = (userId: string, callback: (call: Call | null) => void) => {
-    const invitationsQuery = query(
+    const q = query(
         collection(db, 'calls'),
         where('receiver.id', '==', userId),
         where('status', '==', 'ringing')
     );
 
-    return onSnapshot(invitationsQuery, (snapshot) => {
+    return onSnapshot(q, (snapshot) => {
         if (snapshot.empty) {
             callback(null);
             return;
@@ -263,9 +263,10 @@ export const declineOrEndCall = async (callId: string) => {
         if(callSnap.exists()){
             // Update status to allow the other user to know the call was declined/ended
             await updateDoc(callRef, { status: 'ended' });
+             // A cloud function or a timeout on the client could delete the doc after a while
         }
     } catch (error) {
-        console.error("Error declining call: ", error);
+        console.error("Error declining/ending call: ", error);
     }
 };
 
@@ -286,11 +287,22 @@ export const leaveCall = async (callId: string) => {
             const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
             receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
             
-            batch.delete(callRef);
+            // For direct calls, we mark as ended. For instant, we delete.
+            const callData = callSnap.data();
+            if (callData.type === 'instant') {
+                batch.delete(callRef);
+            } else {
+                batch.update(callRef, { status: 'ended' });
+            }
             await batch.commit();
         }
     } catch (error) {
-        console.error("Error leaving call and cleaning up: ", error);
+        // This can happen if the other user hangs up first. It's safe to ignore.
+        if (error instanceof Error && error.message.includes("No document to update")) {
+            console.log("Call document already deleted by other user.");
+        } else {
+            console.error("Error leaving call and cleaning up: ", error);
+        }
     }
 }
 

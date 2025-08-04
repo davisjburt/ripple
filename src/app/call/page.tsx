@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Spinner } from '@/components/ui/spinner';
-import { db, leaveCall, declineOrEndCall, Call } from '@/lib/firebase';
+import { db, leaveCall, declineOrEndCall, Call, answerCall } from '@/lib/firebase';
 import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, writeBatch, getDocs, serverTimestamp } from 'firebase/firestore';
 import Peer from 'simple-peer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -37,7 +37,6 @@ export default function CallPage() {
 
     const [callData, setCallData] = useState<Call | null>(null);
     const [callStatus, setCallStatus] = useState<'connecting' | 'connected' | 'ended'>('connecting');
-    const [answerApplied, setAnswerApplied] = useState(false);
     
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -73,13 +72,13 @@ export default function CallPage() {
 
     const handleLeaveCall = useCallback(async (shouldRedirect = true) => {
         if (callId) {
-            if (callData?.type === 'direct') {
-                await declineOrEndCall(callId); // Notifies other user
-            }
-            await leaveCall(callId); // Cleans up Firestore for all call types
+            // For direct calls, the status might be 'ringing', 'answered', etc.
+            // For instant meetings, it's usually just 'active' or 'ended'.
+            // The leaveCall utility will handle deletion safely.
+            await leaveCall(callId);
         }
         cleanup(shouldRedirect);
-    }, [callId, callData, cleanup]);
+    }, [callId, cleanup]);
 
     const handleCameraToggle = () => {
         if (localStreamRef.current) {
@@ -109,7 +108,7 @@ export default function CallPage() {
         const remoteCandidatesCollection = isInitiator ? receiverCandidates : callerCandidates;
 
         peer.on('signal', async (data) => {
-            if(data.candidate && callStatus !== 'ended') {
+            if(data.candidate) { // ICE candidate
                 await addDoc(localCandidatesCollection, { candidate: JSON.stringify(data.candidate) });
             }
         });
@@ -142,15 +141,13 @@ export default function CallPage() {
         });
         unsubscribes.current.push(unsubscribeCandidates);
 
-    }, [cleanup, toast, callStatus]);
+    }, [cleanup, toast]);
 
 
     useEffect(() => {
         if (!user || !callId) return;
 
         let isComponentMounted = true;
-        let peer: Peer.Instance | null = null;
-        let stream: MediaStream | null = null;
         
         const startMediaAndInitializeCall = async () => {
             const callDocRef = doc(db, 'calls', callId);
@@ -166,7 +163,7 @@ export default function CallPage() {
             }
 
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 if (!isComponentMounted) {
                     stream.getTracks().forEach(track => track.stop());
                     return;
@@ -188,26 +185,26 @@ export default function CallPage() {
                          return;
                     }
                     
-                    const data = snapshot.data() as Call;
-                    setCallData(data);
-                    
                     if (!snapshot.exists()) {
                          toast({ title: "Call not found or has ended.", variant: "destructive" });
                          cleanup();
                          return;
                     }
+
+                    const data = snapshot.data() as Call;
+                    setCallData(data);
                     
-                    if (data.status === 'declined' || data.status === 'missed' || data.status === 'ended') {
+                    if ((data.status === 'declined' || data.status === 'missed' || data.status === 'ended') && callStatus !== 'ended') {
                         toast({ title: `Call ${data.status}`, variant: 'destructive'});
                         cleanup();
                         return;
                     }
 
                     // Only initialize the peer once
-                    if (!peer && (data.status === 'ringing' || data.status === 'answered' || data.status === 'active')) {
+                    if (!peerRef.current && (data.status === 'ringing' || data.status === 'answered' || data.status === 'active')) {
                         const isInitiator = data.caller.id === user.uid;
                         
-                        peer = new Peer({ initiator: isInitiator, trickle: true, stream });
+                        const peer = new Peer({ initiator: isInitiator, trickle: true, stream });
                         peerRef.current = peer;
 
                         setupPeerListeners(peer, callId, isInitiator);
@@ -215,28 +212,30 @@ export default function CallPage() {
                         if (isInitiator) {
                              if (!data.offer) {
                                 peer.on('signal', async (offer) => {
-                                    if (offer.type === 'offer' && callStatus !== 'ended') {
-                                        await updateDoc(callDocRef, { offer: JSON.stringify(offer), status: 'active' });
+                                    if (offer.type === 'offer') {
+                                        await updateDoc(callDocRef, { offer: JSON.stringify(offer) });
                                     }
                                 });
                              }
-                             if (data.answer && !answerApplied) {
-                                if (peerRef.current && !peerRef.current.destroyed && peerRef.current.signalingState !== 'stable') {
+                             if (data.answer) {
+                                if (!peerRef.current.destroyed && peerRef.current.signalingState !== 'stable') {
                                     peerRef.current.signal(JSON.parse(data.answer));
-                                    setAnswerApplied(true);
                                 }
                              }
                         } else { // Is receiver/joiner
+                            // For direct calls, receiver needs to answer first
+                            if (data.type === 'direct' && data.status === 'ringing') {
+                                // Handled by incoming call dialog
+                                return;
+                            }
+
+                            // For instant meetings or answered direct calls
                             if(data.offer && peer) {
-                                try {
-                                    peer.signal(JSON.parse(data.offer));
-                                } catch (err) {
-                                    console.error("Error signaling offer", err);
-                                }
+                                peer.signal(JSON.parse(data.offer));
 
                                 peer.on('signal', async (answer) => {
-                                    if (answer.type === 'answer' && callStatus !== 'ended' && !data.answer) {
-                                       await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
+                                    if (answer.type === 'answer' && !data.answer) {
+                                       await updateDoc(callDocRef, { answer: JSON.stringify(answer), status: 'answered' });
                                     }
                                 });
                             }
@@ -284,7 +283,9 @@ export default function CallPage() {
         });
     };
 
-    const callTitle = callData?.type === 'direct' ? `Call with ${contactName}` : `Instant Meeting`;
+    const callTitle = callData?.type === 'direct' 
+        ? `Call with ${user?.uid === callData.caller.id ? callData.receiver?.name : callData.caller.name}` 
+        : `Instant Meeting`;
     const isInstantMeeting = callData?.type === 'instant';
 
 
