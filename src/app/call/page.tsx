@@ -66,12 +66,12 @@ export default function CallPage() {
 
     const handleLeaveCall = useCallback(async () => {
         cleanup();
-        if (callId && !isJoining) {
+        if (callId) {
              try {
                 const callDocRef = doc(db, 'calls', callId);
                 const callDocSnap = await getDoc(callDocRef);
 
-                if (callDocSnap.exists()) {
+                if (callDocSnap.exists() && callDocSnap.data()?.initiator === user?.uid) {
                    const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
                    const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
                    const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
@@ -89,7 +89,7 @@ export default function CallPage() {
                 console.error("Error during call document cleanup: ", error);
             }
         }
-    }, [callId, isJoining, cleanup]);
+    }, [callId, user, cleanup]);
 
     const handleCameraToggle = () => {
         if (localStreamRef.current) {
@@ -195,9 +195,13 @@ export default function CallPage() {
 
             const callDocRef = doc(db, 'calls', callId);
 
+            // Create the call document first
+            await setDoc(callDocRef, { initiator: user.uid, createdAt: new Date() });
+
             peer.on('signal', async (offer) => {
                 if(offer.type === 'offer') {
-                    await setDoc(callDocRef, { offer: JSON.stringify(offer) }, { merge: true });
+                    // Update the document with the offer
+                    await updateDoc(callDocRef, { offer: JSON.stringify(offer) });
                 }
             });
 
@@ -223,36 +227,45 @@ export default function CallPage() {
 
         const joinCall = async (stream: MediaStream) => {
             const callDocRef = doc(db, 'calls', callId);
-            const callDocSnap = await getDoc(callDocRef);
+            
+            // Wait for the offer to appear in the call document
+            const unsubscribeOffer = onSnapshot(callDocRef, async (callDocSnap) => {
+                 if (!isComponentMounted || (peerRef.current && !peerRef.current.destroyed)) return;
+                 
+                 if (callDocSnap.exists() && callDocSnap.data()?.offer) {
+                    unsubscribeOffer(); // We have the offer, we don't need this listener anymore
+                    
+                    const peer = new Peer({ initiator: false, trickle: true });
+                    peerRef.current = peer;
 
-            if (!isComponentMounted) return;
+                    peer.addStream(stream);
+                    
+                    const offer = JSON.parse(callDocSnap.data().offer);
+                    
+                    peer.on('signal', async (answer) => {
+                        if (answer.type === 'answer') {
+                            await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
+                        }
+                    });
 
-            if (!callDocSnap.exists() || !callDocSnap.data()?.offer) {
+                    try {
+                        await peer.signal(offer);
+                    } catch (err) {
+                        console.error("Error signaling offer", err);
+                    }
+                    
+                    setupPeerListeners(peer, callId, false);
+                 } else if (!callDocSnap.exists()) {
+                     // The document was likely deleted or never created.
+                     toast({ title: "Call not found or has been ended.", variant: "destructive" });
+                     cleanup();
+                 }
+            }, (error) => {
+                console.error("Error listening for call offer: ", error);
                 toast({ title: "Call not found or invalid.", variant: "destructive" });
                 cleanup();
-                return;
-            }
-            
-            const peer = new Peer({ initiator: false, trickle: true });
-            peerRef.current = peer;
-
-            peer.addStream(stream);
-            
-            const offer = JSON.parse(callDocSnap.data().offer);
-            
-            peer.on('signal', async (answer) => {
-                if (answer.type === 'answer') {
-                    await setDoc(callDocRef, { answer: JSON.stringify(answer) }, { merge: true });
-                }
             });
-
-            try {
-                await peer.signal(offer);
-            } catch (err) {
-                 console.error("Error signaling offer", err);
-            }
-            
-            setupPeerListeners(peer, callId, false);
+            unsubscribes.current.push(unsubscribeOffer);
         };
 
         startMedia().then(stream => {
