@@ -30,6 +30,7 @@ export default function CallPage() {
     const isJoining = searchParams.get('answered') === 'true';
 
     const [callStatus, setCallStatus] = useState<'connecting' | 'connected' | 'ended'>('connecting');
+    const [answerApplied, setAnswerApplied] = useState(false);
     
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -205,14 +206,14 @@ export default function CallPage() {
             // Listen for the answer from the other peer
             const unsubscribe = onSnapshot(callDocRef, (snapshot) => {
                 const data = snapshot.data();
-                if (peerRef.current && !peerRef.current.destroyed && data?.answer && peerRef.current.signalingState !== 'stable') {
+                if (peerRef.current && !peerRef.current.destroyed && data?.answer && !answerApplied) {
                    try {
+                     setAnswerApplied(true);
                      peerRef.current.signal(JSON.parse(data.answer));
                    } catch(err) {
+                     setAnswerApplied(false); // Reset if signaling fails
                      console.error("Error applying answer", err);
                    }
-                   // Once we have the answer, we don't need this listener anymore.
-                   unsubscribe();
                 }
             });
             unsubscribes.current.push(unsubscribe);
@@ -267,7 +268,7 @@ export default function CallPage() {
              isComponentMounted = false;
              cleanup();
         }
-    }, [user, callId, isJoining, cleanup, setupPeerListeners, toast]);
+    }, [user, callId, isJoining, cleanup, setupPeerListeners, toast, answerApplied]);
     
 
     const callTitle = contactName ? `Call with ${contactName}` : `Call`;
@@ -344,5 +345,3 @@ export default function CallPage() {
         </div>
     );
 }
-
-    
