@@ -58,11 +58,9 @@ export default function CallPage() {
         unsubscribes.current.forEach(unsub => unsub());
         unsubscribes.current = [];
 
-
-        if (callStatus !== 'ended') {
-          setCallStatus('ended');
-        }
-    }, [callStatus]);
+        setCallStatus('ended');
+        
+    }, []);
 
     const handleLeaveCall = useCallback(async () => {
         cleanup();
@@ -194,14 +192,15 @@ export default function CallPage() {
             peer.addStream(stream);
 
             const callDocRef = doc(db, 'calls', callId);
-
-            // Create the call document first
-            await setDoc(callDocRef, { initiator: user.uid, createdAt: new Date() });
-
+            
             peer.on('signal', async (offer) => {
                 if(offer.type === 'offer') {
-                    // Update the document with the offer
-                    await updateDoc(callDocRef, { offer: JSON.stringify(offer) });
+                    // Create/update the document with the offer
+                    await setDoc(callDocRef, { 
+                        initiator: user.uid, 
+                        createdAt: new Date(),
+                        offer: JSON.stringify(offer)
+                    }, { merge: true });
                 }
             });
 
@@ -216,7 +215,7 @@ export default function CallPage() {
                      setAnswerApplied(false); 
                      console.error("Error applying answer", err);
                    }
-                } else if (!snapshot.exists() && callStatus !== 'ended') {
+                } else if (!snapshot.exists()) {
                     cleanup();
                 }
             });
@@ -280,9 +279,11 @@ export default function CallPage() {
 
         return () => {
              isComponentMounted = false;
-             handleLeaveCall();
+             // Call cleanup directly here instead of handleLeaveCall
+             // to avoid dependency issues in useEffect. handleLeaveCall is for user actions.
+             cleanup();
         }
-    }, [user, callId, isJoining, cleanup, setupPeerListeners, toast, answerApplied, callStatus, handleLeaveCall]);
+    }, [user, callId, isJoining, cleanup, setupPeerListeners, toast, answerApplied]);
     
 
     const callTitle = contactName ? `Call with ${contactName}` : `Call`;
