@@ -29,10 +29,10 @@ export default function SettingsPage() {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
 
     useEffect(() => {
-        if (user?.photoURL) {
+        if (user?.photoURL && !newImageFile) {
             setPreviewUrl(user.photoURL);
         }
-    }, [user?.photoURL]);
+    }, [user, newImageFile]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -63,15 +63,14 @@ export default function SettingsPage() {
             // 2. Update Auth profile
             await updateProfile(auth.currentUser, { photoURL: downloadURL });
             
-            // 3. Update Firestore document (triggers useAuth to update)
+            // 3. Update Firestore document
             const userDocRef = doc(db, 'users', user.uid);
             await updateDoc(userDocRef, { photoURL: downloadURL });
             
-            // Note: We don't need to manually call user.reload() or update local state.
-            // The onAuthStateChanged listener in useAuth will detect the change via Firestore
-            // and propagate the new user object, which will re-render this component.
-            
+            // 4. Update UI immediately
             setNewImageFile(null);
+            setPreviewUrl(downloadURL); // Directly update the preview to the final URL
+            
             toast({
                 title: 'Success',
                 description: 'Your profile picture has been updated.',
