@@ -229,7 +229,7 @@ export default function CallPage() {
             });
 
             const unsubDoc = onSnapshot(callDocRef, (snapshot) => {
-                 if (!snapshot.exists() && snapshot.metadata.hasPendingWrites === false) {
+                 if (!snapshot.exists() && !snapshot.metadata.hasPendingWrites) {
                      if (isComponentMountedRef.current) cleanup();
                      return;
                 }
@@ -308,18 +308,9 @@ export default function CallPage() {
 
         return () => {
              isComponentMountedRef.current = false;
-             if (peerRef.current) {
-                peerRef.current.destroy();
-                peerRef.current = null;
-             }
-             if (localStreamRef.current) {
-                localStreamRef.current.getTracks().forEach(track => track.stop());
-                localStreamRef.current = null;
-            }
-            unsubscribes.current.forEach(unsub => unsub());
-            unsubscribes.current = [];
+             handleLeaveCall(false);
         }
-    }, [user, callId, isJoining, setupPeerListeners, toast, cleanup, answerApplied]);
+    }, [user, callId, isJoining, setupPeerListeners, toast, cleanup, answerApplied, handleLeaveCall]);
     
     const handleInvite = () => {
         const inviteLink = window.location.href.replace('&join=true', '') + '&join=true';
@@ -451,3 +442,5 @@ export default function CallPage() {
         </div>
     );
 }
+
+    
