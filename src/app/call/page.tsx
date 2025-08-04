@@ -80,22 +80,20 @@ export default function CallPage() {
                 } else { 
                     // This is an instant meeting, cleanup only the call document
                     const callDocRef = doc(db, 'calls', callId);
-                    const callDocSnap = await getDoc(callDocRef);
-
-                     if (callDocSnap.exists()) {
-                       const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
-                       const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
-                       const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
-                       const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
-                       
-                       const batch = writeBatch(db);
-                       callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
-                       receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
-                       
-                       batch.delete(callDocRef);
-                       
-                       await batch.commit();
-                    }
+                    const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
+                    const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
+                    
+                    const batch = writeBatch(db);
+                    
+                    const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
+                    callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                    
+                    const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
+                    receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                    
+                    batch.delete(callDocRef);
+                    
+                    await batch.commit();
                 }
             } catch (error) {
                 console.error("Error during call document cleanup: ", error);
@@ -180,10 +178,7 @@ export default function CallPage() {
             
             // For instant meetings, initiator creates the doc immediately
             if (!isJoining && !invitationId) {
-                 const callDocSnap = await getDoc(callDocRef);
-                 if (!callDocSnap.exists()) {
-                    await setDoc(callDocRef, { initiator: user.uid, createdAt: new Date() });
-                 }
+                await setDoc(callDocRef, { initiator: user.uid, createdAt: new Date() });
             }
 
             try {
@@ -247,14 +242,7 @@ export default function CallPage() {
                     const offer = JSON.parse(callDocSnap.data().offer);
                     peer.on('signal', async (answer) => {
                         if (answer.type === 'answer') {
-                           try {
-                               const docToUpdate = await getDoc(callDocRef);
-                               if(docToUpdate.exists()){
-                                   await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
-                               }
-                           } catch(e) {
-                               console.error("Failed to update answer", e);
-                           }
+                           await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
                         }
                     });
 
