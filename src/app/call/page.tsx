@@ -45,6 +45,7 @@ export default function CallPage() {
     const localStreamRef = useRef<MediaStream | null>(null);
     
     const unsubscribes = useRef<(() => void)[]>([]);
+    const isComponentMountedRef = useRef(true);
 
 
     const cleanup = useCallback((shouldRedirect = true) => {
@@ -74,10 +75,9 @@ export default function CallPage() {
     const handleLeaveCall = useCallback(async (shouldRedirect = true) => {
         if (callId && user) {
             try {
-                // If it's a direct call (has an invitation), use the specific leaveCall function
                 if (invitationId) {
                     await leaveCall(invitationId);
-                } else { // It's an instant meeting, just clean up the call document for the initiator
+                } else { 
                     const callDocRef = doc(db, 'calls', callId);
                     const callDocSnap = await getDoc(callDocRef);
                      if (callDocSnap.exists() && callDocSnap.data()?.initiator === user?.uid) {
@@ -153,7 +153,6 @@ export default function CallPage() {
             snapshot.docChanges().forEach(async (change) => {
                 if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
                    try {
-                        // Avoid signaling race conditions
                         if (peerRef.current.signalingState !== 'stable' || isJoining) {
                              peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
                         }
@@ -170,19 +169,18 @@ export default function CallPage() {
 
 
     useEffect(() => {
-        if (!user || !callId) return;
+        isComponentMountedRef.current = true;
 
-        let isComponentMounted = true;
+        if (!user || !callId) return;
 
         const startMedia = async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                if (!isComponentMounted) {
+                if (!isComponentMountedRef.current) {
                     stream.getTracks().forEach(track => track.stop());
                     return null;
                 };
 
-                // Apply initial mic state
                 const audioTrack = stream.getAudioTracks()[0];
                 if (audioTrack) {
                     audioTrack.enabled = isMicOn;
@@ -200,7 +198,7 @@ export default function CallPage() {
                 return stream;
             } catch (err) {
                 console.error("Failed to get media", err);
-                if (isComponentMounted) {
+                if (isComponentMountedRef.current) {
                     setHasCameraPermission(false);
                     toast({
                         title: "Camera/Mic access denied",
@@ -230,25 +228,24 @@ export default function CallPage() {
                 }
             });
 
-            const unsubscribe = onSnapshot(callDocRef, (snapshot) => {
+            const unsubDoc = onSnapshot(callDocRef, (snapshot) => {
                  if (!snapshot.exists() && snapshot.metadata.hasPendingWrites === false) {
-                     if (isComponentMounted) cleanup();
+                     if (isComponentMountedRef.current) cleanup();
                      return;
                 }
                 const data = snapshot.data();
-                if (peerRef.current && !peerRef.current.destroyed && data?.answer && !answerApplied) {
+                if (isComponentMountedRef.current && peerRef.current && !peerRef.current.destroyed && data?.answer && !answerApplied) {
                    try {
                      if (peerRef.current.signalingState !== 'stable') {
                         setAnswerApplied(true);
                         peerRef.current.signal(JSON.parse(data.answer));
-                        unsubscribe(); 
                      }
                    } catch(err) {
                      console.error("Error applying answer", err);
                    }
                 }
             });
-            unsubscribes.current.push(unsubscribe);
+            unsubscribes.current.push(unsubDoc);
             
             setupPeerListeners(peer, callId, true);
         };
@@ -257,11 +254,11 @@ export default function CallPage() {
             const callDocRef = doc(db, 'calls', callId);
             
             const unsubscribeOffer = onSnapshot(callDocRef, async (callDocSnap) => {
-                 if (!isComponentMounted || (peerRef.current && !peerRef.current.destroyed)) return;
+                 if (!isComponentMountedRef.current || (peerRef.current && !peerRef.current.destroyed)) return;
                  
                  if (!callDocSnap.exists() && callDocSnap.metadata.hasPendingWrites === false) {
                      toast({ title: "Call not found or has been ended.", variant: "destructive" });
-                     if (isComponentMounted) cleanup();
+                     if (isComponentMountedRef.current) cleanup();
                      return;
                  }
 
@@ -294,13 +291,13 @@ export default function CallPage() {
             }, (error) => {
                 console.error("Error listening for call offer: ", error);
                 toast({ title: "Call not found or invalid.", variant: "destructive" });
-                 if (isComponentMounted) cleanup();
+                 if (isComponentMountedRef.current) cleanup();
             });
             unsubscribes.current.push(unsubscribeOffer);
         };
 
         startMedia().then(stream => {
-            if(stream && isComponentMounted) {
+            if(stream && isComponentMountedRef.current) {
                 if(isJoining) {
                     joinCall(stream);
                 } else {
@@ -310,10 +307,19 @@ export default function CallPage() {
         });
 
         return () => {
-             isComponentMounted = false;
-             handleLeaveCall(false);
+             isComponentMountedRef.current = false;
+             if (peerRef.current) {
+                peerRef.current.destroy();
+                peerRef.current = null;
+             }
+             if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(track => track.stop());
+                localStreamRef.current = null;
+            }
+            unsubscribes.current.forEach(unsub => unsub());
+            unsubscribes.current = [];
         }
-    }, [user, callId, isJoining, handleLeaveCall, setupPeerListeners]);
+    }, [user, callId, isJoining, setupPeerListeners, toast, cleanup]);
     
     const handleInvite = () => {
         const inviteLink = window.location.href.replace('&join=true', '') + '&join=true';
