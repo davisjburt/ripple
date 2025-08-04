@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/sidebar';
 import { SidebarNav } from '@/components/sidebar-nav';
 import { UserNav } from '@/components/user-nav';
-import { Video } from 'lucide-react';
+import { PanelLeft, Video } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { CallInvitation, onIncomingCall } from '@/lib/firebase';
@@ -57,7 +57,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </Sidebar>
       <SidebarInset>
         <header className="sticky top-0 z-30 flex items-center justify-between h-14 px-4 border-b bg-background/80 backdrop-blur-lg sm:px-6">
-          <SidebarTrigger className="md:hidden" />
+          <SidebarTrigger className="md:hidden">
+             <PanelLeft />
+             <span className="ml-2">Menu</span>
+          </SidebarTrigger>
           <div className="flex-1" />
           <UserNav />
         </header>
