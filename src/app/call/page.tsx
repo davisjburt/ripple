@@ -41,9 +41,7 @@ export default function CallPage() {
     const unsubscribes = useRef<(() => void)[]>([]);
 
 
-    const cleanup = useCallback(async () => {
-        console.log('Cleaning up call...', callStatus);
-        
+    const cleanup = useCallback(() => {
         if (peerRef.current && !peerRef.current.destroyed) {
             peerRef.current.destroy();
             peerRef.current = null;
@@ -64,30 +62,37 @@ export default function CallPage() {
         if (callStatus !== 'ended') {
           setCallStatus('ended');
         }
+    }, [callStatus]);
 
-        // Optional: Clean up the call document in Firestore
-        if (callId) {
+    const handleLeaveCall = useCallback(async () => {
+        cleanup();
+         // Only the initiator should clean up the database documents
+        if (callId && !isJoining) {
              try {
-                const callDoc = await getDoc(doc(db, 'calls', callId));
-                if (callDoc.exists() && !isJoining) {
+                const callDocRef = doc(db, 'calls', callId);
+                const callDocSnap = await getDoc(callDocRef);
+
+                if (callDocSnap.exists()) {
                    // Clean up ICE candidate subcollections
                    const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
                    const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
                    const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
                    const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
+                   
                    const batch = writeBatch(db);
                    callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
                    receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                   
+                   // Delete the main call document
+                   batch.delete(callDocRef);
+                   
                    await batch.commit();
-
-                   await deleteDoc(doc(db, 'calls', callId));
                 }
             } catch (error) {
                 console.error("Error during call document cleanup: ", error);
             }
         }
-    }, [callId, isJoining, callStatus]);
-
+    }, [callId, isJoining, cleanup]);
 
     const handleCameraToggle = () => {
         if (localStreamRef.current) {
@@ -214,6 +219,9 @@ export default function CallPage() {
                      setAnswerApplied(false); // Reset if signaling fails
                      console.error("Error applying answer", err);
                    }
+                } else if (!snapshot.exists() && callStatus !== 'ended') {
+                    // If the document is deleted by the other user hanging up
+                    cleanup();
                 }
             });
             unsubscribes.current.push(unsubscribe);
@@ -268,7 +276,7 @@ export default function CallPage() {
              isComponentMounted = false;
              cleanup();
         }
-    }, [user, callId, isJoining, cleanup, setupPeerListeners, toast, answerApplied]);
+    }, [user, callId, isJoining, cleanup, setupPeerListeners, toast, answerApplied, callStatus]);
     
 
     const callTitle = contactName ? `Call with ${contactName}` : `Call`;
@@ -333,7 +341,7 @@ export default function CallPage() {
                         onCameraToggle={handleCameraToggle}
                         isMicOn={isMicOn}
                         onMicToggle={handleMicToggle}
-                        onLeave={cleanup}
+                        onLeave={handleLeaveCall}
                     />
                 </footer>
             </div>
@@ -345,3 +353,5 @@ export default function CallPage() {
         </div>
     );
 }
+
+    
