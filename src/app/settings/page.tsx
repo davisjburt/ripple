@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -15,65 +14,64 @@ import { updateProfile } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Edit, User, Settings, Camera, Upload } from 'lucide-react';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Spinner } from '@/components/ui/spinner';
 
 
 export default function SettingsPage() {
     const { user, loading: authLoading } = useAuth();
     const { toast } = useToast();
-    const [newImage, setNewImage] = useState<File | null>(null);
+    const [newImageFile, setNewImageFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cameraInputRef = useRef<HTMLInputElement>(null);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (user?.photoURL) {
             setPreviewUrl(user.photoURL);
         }
-    }, [user]);
+    }, [user?.photoURL]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
-            setNewImage(file);
+            setNewImageFile(file);
             setPreviewUrl(URL.createObjectURL(file));
             setIsDialogOpen(false); // Close dialog after selection
         }
     };
 
     const handleUpload = async () => {
-        if (!newImage || !user) {
+        if (!newImageFile || !user || !auth.currentUser) {
             toast({
                 variant: 'destructive',
-                title: 'No image selected',
-                description: 'Please select an image file to upload.',
+                title: 'Error',
+                description: 'No image selected or user not logged in.',
             });
             return;
         }
 
-        setLoading(true);
+        setIsUploading(true);
         try {
             // 1. Upload to Storage
             const storageRef = ref(storage, `profile-pics/${user.uid}`);
-            const uploadResult = await uploadBytes(storageRef, newImage);
+            const uploadResult = await uploadBytes(storageRef, newImageFile);
             const downloadURL = await getDownloadURL(uploadResult.ref);
 
             // 2. Update Auth profile
-            if (auth.currentUser) {
-                await updateProfile(auth.currentUser, { photoURL: downloadURL });
-                await auth.currentUser.reload(); // Force refresh of user token
-            }
+            await updateProfile(auth.currentUser, { photoURL: downloadURL });
             
-            // 3. Update Firestore document
+            // 3. Update Firestore document (triggers useAuth to update)
             const userDocRef = doc(db, 'users', user.uid);
             await updateDoc(userDocRef, { photoURL: downloadURL });
             
-            // 4. Update UI
-            setPreviewUrl(downloadURL);
-            setNewImage(null);
+            // Note: We don't need to manually call user.reload() or update local state.
+            // The onAuthStateChanged listener in useAuth will detect the change via Firestore
+            // and propagate the new user object, which will re-render this component.
+            
+            setNewImageFile(null);
             toast({
                 title: 'Success',
                 description: 'Your profile picture has been updated.',
@@ -83,10 +81,12 @@ export default function SettingsPage() {
             toast({
                 variant: 'destructive',
                 title: 'Upload Failed',
-                description: error.message || 'An unexpected error occurred. Please check permissions.',
+                description: error.message || 'An unexpected error occurred.',
             });
+             // If upload fails, revert preview to the original photoURL
+            setPreviewUrl(user.photoURL || null);
         } finally {
-            setLoading(false);
+            setIsUploading(false);
         }
     };
 
@@ -175,15 +175,15 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                             
-                            {newImage && (
+                            {newImageFile && (
                                 <div className="flex items-center gap-4 pt-4">
-                                    <Button onClick={handleUpload} disabled={loading}>
-                                        {loading ? <><Spinner size="icon" className="mr-2"/> Saving...</> : 'Save Changes'}
+                                    <Button onClick={handleUpload} disabled={isUploading}>
+                                        {isUploading ? <><Spinner size="icon" className="mr-2"/> Saving...</> : 'Save Changes'}
                                     </Button>
                                     <Button variant="ghost" onClick={() => {
-                                        setNewImage(null);
+                                        setNewImageFile(null);
                                         setPreviewUrl(user.photoURL || null);
-                                    }} disabled={loading}>
+                                    }} disabled={isUploading}>
                                         Cancel
                                     </Button>
                                 </div>
