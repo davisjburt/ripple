@@ -3,78 +3,61 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if a user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Users can read their own user document and admins can read any.
-    // Users can only be created via the backend (e.g., on sign-up).
-    // Users can update their own document.
+    // Users can read public user data, but only write to their own document.
     match /users/{userId} {
-      allow read, update: if isAuthenticated() && request.auth.uid == userId;
-      allow create: if isAuthenticated();
+      allow get: if request.auth != null;
+      allow update: if request.auth.uid == userId;
 
-      // Rules for the 'contacts' subcollection
+      // Users can get and list contacts from their own 'contacts' subcollection.
       match /contacts/{contactId} {
-        // A user can only list/read/write their own contacts.
-        allow read, write, list: if isAuthenticated() && request.auth.uid == userId;
-      }
-    }
-
-    // Friend requests can be created by any authenticated user.
-    // They can only be read if you are the recipient ('to').
-    // They can only be updated if you are the recipient.
-    // They can only be deleted if you are the sender or receiver.
-    match /friendRequests/{requestId} {
-      allow create: if isAuthenticated();
-      allow read, update: if isAuthenticated() && request.auth.uid == resource.data.to;
-      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.to || request.auth.uid == resource.data.from);
-      
-      // Allow the specific query from the app to get pending requests
-      allow list: if isAuthenticated() 
-                  && request.auth.uid == request.query.where.to
-                  && request.query.where.status == 'pending';
-    }
-
-    // A chat room can be read or written to only by its participants.
-    match /chats/{chatId} {
-      allow read, write, create: if isAuthenticated() && request.auth.uid in resource.data.participants;
-      
-      // Allow the query for a user's chat rooms
-      allow list: if isAuthenticated() && request.auth.uid in request.query.where.participants;
-
-      // Messages can be read by participants, and created by a sender who is a participant.
-      match /messages/{messageId} {
-        allow read, create: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow get: if request.auth.uid == userId;
+        allow list: if request.auth.uid == userId;
       }
     }
     
-    // Call invitations can be created by any authenticated user.
-    // They can only be read/updated/deleted by the intended receiver.
-    match /callInvitations/{invitationId} {
-        allow create: if isAuthenticated();
-        allow get, update, delete: if isAuthenticated() && request.auth.uid == resource.data.receiverId;
-        
-        // Allow the query for incoming calls for the current user
-        allow list: if isAuthenticated() 
-                    && request.auth.uid == request.query.where.receiverId
-                    && request.query.where.status == 'ringing';
+    // Friend Requests:
+    // Users can create requests.
+    // Users can only query for requests sent *to* them that are *pending*.
+    // Users can update/delete requests sent to them.
+    match /friendRequests/{requestId} {
+      allow create: if request.auth != null;
+      allow get, update, delete: if resource.data.to == request.auth.uid;
+      allow list: if request.auth.uid == request.query.where.to && request.query.where.status == 'pending';
     }
 
-    // Call documents for WebRTC signaling
-    match /calls/{callId} {
-      allow get, create, update, delete: if isAuthenticated() && request.auth.uid in resource.data.participants;
-      allow read: if isAuthenticated() && request.auth.uid in resource.data.participants; // Generic read for snapshot listeners
+    // Chats & Messages:
+    // Users can only access chats they are a participant in.
+    match /chats/{chatId} {
+      allow get, list: if request.auth.uid in resource.data.participants;
       
-      // ICE candidates subcollections
-      match /callerCandidates/{candidateId} {
-          allow list, create: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-          allow get, delete: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
+      // For querying the collection, the query must include the user's UID.
+      // This is a special rule for collection group queries vs document reads.
+      allow list: if request.auth.uid in request.query.where.participants;
+
+      // Users can read/write messages in chats they are a participant of.
+      match /messages/{messageId} {
+        allow read, write: if request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
       }
-      match /receiverCandidates/{candidateId} {
-          allow list, create: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-          allow get, delete: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
+    }
+
+    // Call Invitations:
+    // Authenticated users can create invitations.
+    // Users can only read/update/delete invitations sent to them.
+    // Users can only query for invitations where they are the receiver and status is 'ringing'.
+    match /callInvitations/{invitationId} {
+      allow create: if request.auth != null;
+      allow get, update, delete: if resource.data.receiverId == request.auth.uid;
+      allow list: if request.auth.uid == request.query.where.receiverId && request.query.where.status == 'ringing';
+    }
+
+    // Calls & Signaling Candidates:
+    // Users can only access call documents they are a participant in.
+    match /calls/{callId} {
+      allow read, write, delete: if request.auth.uid in resource.data.participants;
+      
+      // Users can read/write candidates if they are a participant in the parent call document.
+      match /{collectionId}/{candidateId} {
+        allow read, write, delete: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
       }
     }
   }
