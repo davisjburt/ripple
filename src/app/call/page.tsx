@@ -319,7 +319,7 @@ export default function CallPage() {
             unsubscribes.current.forEach(unsub => unsub());
             unsubscribes.current = [];
         }
-    }, [user, callId, isJoining, setupPeerListeners, toast, cleanup]);
+    }, [user, callId, isJoining, setupPeerListeners, toast, cleanup, answerApplied]);
     
     const handleInvite = () => {
         const inviteLink = window.location.href.replace('&join=true', '') + '&join=true';
