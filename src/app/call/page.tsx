@@ -66,14 +66,12 @@ export default function CallPage() {
 
     const handleLeaveCall = useCallback(async () => {
         cleanup();
-         // Only the initiator should clean up the database documents
         if (callId && !isJoining) {
              try {
                 const callDocRef = doc(db, 'calls', callId);
                 const callDocSnap = await getDoc(callDocRef);
 
                 if (callDocSnap.exists()) {
-                   // Clean up ICE candidate subcollections
                    const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
                    const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
                    const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
@@ -83,7 +81,6 @@ export default function CallPage() {
                    callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
                    receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
                    
-                   // Delete the main call document
                    batch.delete(callDocRef);
                    
                    await batch.commit();
@@ -123,7 +120,6 @@ export default function CallPage() {
 
         peer.on('signal', async (data) => {
             if(data.candidate) {
-                // Send candidate to the other peer
                 await addDoc(localCandidatesCollection, { candidate: JSON.stringify(data.candidate) });
             }
         });
@@ -142,19 +138,15 @@ export default function CallPage() {
             cleanup();
         });
 
-        // Listen for remote ICE candidates
         const unsubscribeCandidates = onSnapshot(remoteCandidatesCollection, (snapshot) => {
             snapshot.docChanges().forEach(async (change) => {
-                if (change.type === 'added') {
-                   if(peer && !peer.destroyed) {
-                     try {
-                        await peer.signal({ candidate: JSON.parse(change.doc.data().candidate) });
-                     } catch(err) {
+                if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
+                   try {
+                        await peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                   } catch(err) {
                         console.error("Error signaling candidate", err);
-                     }
-                     // We can delete the candidate doc now that we've used it
-                     await deleteDoc(change.doc.ref);
                    }
+                   await deleteDoc(change.doc.ref);
                 }
             });
         });
@@ -196,31 +188,31 @@ export default function CallPage() {
         };
 
         const initiateCall = async (stream: MediaStream) => {
-            const peer = new Peer({ initiator: true, trickle: true, stream });
+            const peer = new Peer({ initiator: true, trickle: true });
             peerRef.current = peer;
+
+            peer.addStream(stream);
 
             const callDocRef = doc(db, 'calls', callId);
 
             peer.on('signal', async (offer) => {
-                // Only create the offer document if it's an offer type signal
                 if(offer.type === 'offer') {
                     await setDoc(callDocRef, { offer: JSON.stringify(offer) }, { merge: true });
                 }
             });
 
-            // Listen for the answer from the other peer
             const unsubscribe = onSnapshot(callDocRef, (snapshot) => {
                 const data = snapshot.data();
                 if (peerRef.current && !peerRef.current.destroyed && data?.answer && !answerApplied) {
                    try {
                      setAnswerApplied(true);
                      peerRef.current.signal(JSON.parse(data.answer));
+                     unsubscribe(); // Unsubscribe after applying the answer
                    } catch(err) {
-                     setAnswerApplied(false); // Reset if signaling fails
+                     setAnswerApplied(false); 
                      console.error("Error applying answer", err);
                    }
                 } else if (!snapshot.exists() && callStatus !== 'ended') {
-                    // If the document is deleted by the other user hanging up
                     cleanup();
                 }
             });
@@ -241,9 +233,11 @@ export default function CallPage() {
                 return;
             }
             
-            const peer = new Peer({ initiator: false, trickle: true, stream });
+            const peer = new Peer({ initiator: false, trickle: true });
             peerRef.current = peer;
 
+            peer.addStream(stream);
+            
             const offer = JSON.parse(callDocSnap.data().offer);
             
             peer.on('signal', async (answer) => {
@@ -271,12 +265,11 @@ export default function CallPage() {
             }
         });
 
-        // Cleanup on component unmount
         return () => {
              isComponentMounted = false;
-             cleanup();
+             handleLeaveCall();
         }
-    }, [user, callId, isJoining, cleanup, setupPeerListeners, toast, answerApplied, callStatus]);
+    }, [user, callId, isJoining, cleanup, setupPeerListeners, toast, answerApplied, callStatus, handleLeaveCall]);
     
 
     const callTitle = contactName ? `Call with ${contactName}` : `Call`;
@@ -353,5 +346,3 @@ export default function CallPage() {
         </div>
     );
 }
-
-    
