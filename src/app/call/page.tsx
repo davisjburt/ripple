@@ -198,14 +198,14 @@ export default function CallPage() {
             peer.on('signal', async (offer) => {
                 // Only create the offer document if it's an offer type signal
                 if(offer.type === 'offer') {
-                    await updateDoc(callDocRef, { offer: JSON.stringify(offer) });
+                    await setDoc(callDocRef, { offer: JSON.stringify(offer) }, { merge: true });
                 }
             });
 
             // Listen for the answer from the other peer
             const unsubscribe = onSnapshot(callDocRef, (snapshot) => {
                 const data = snapshot.data();
-                if (data?.answer && peerRef.current && !peerRef.current.destroyed && peerRef.current.signalingState !== 'stable') {
+                if (peerRef.current && !peerRef.current.destroyed && data?.answer && peerRef.current.signalingState !== 'stable') {
                    try {
                      peerRef.current.signal(JSON.parse(data.answer));
                    } catch(err) {
@@ -239,7 +239,7 @@ export default function CallPage() {
             
             peer.on('signal', async (answer) => {
                 if (answer.type === 'answer') {
-                    await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
+                    await setDoc(callDocRef, { answer: JSON.stringify(answer) }, { merge: true });
                 }
             });
 
@@ -344,3 +344,5 @@ export default function CallPage() {
         </div>
     );
 }
+
+    
