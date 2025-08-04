@@ -2,7 +2,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, UserPlus, X, Copy } from 'lucide-react';
+import { ChevronLeft, Copy } from 'lucide-react';
 import Link from 'next/link';
 import { VideoControls } from '@/components/video-controls';
 import { ChatPanel } from '@/components/chat-panel';
@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Spinner } from '@/components/ui/spinner';
-import { db, leaveCall, declineOrEndCall, Call, answerCall } from '@/lib/firebase';
+import { db, leaveCall, Call } from '@/lib/firebase';
 import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, writeBatch, getDocs, serverTimestamp } from 'firebase/firestore';
 import Peer from 'simple-peer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -32,7 +32,6 @@ export default function CallPage() {
     const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
 
     const callId = searchParams.get('id');
-    const contactName = searchParams.get('contactName');
     const isJoining = searchParams.get('join') === 'true';
 
     const [callData, setCallData] = useState<Call | null>(null);
@@ -65,16 +64,13 @@ export default function CallPage() {
         
         setCallStatus('ended');
 
-        if(router && shouldRedirect) {
+        if(shouldRedirect) {
             router.push('/');
         }
     }, [router]);
 
     const handleLeaveCall = useCallback(async (shouldRedirect = true) => {
         if (callId) {
-            // For direct calls, the status might be 'ringing', 'answered', etc.
-            // For instant meetings, it's usually just 'active' or 'ended'.
-            // The leaveCall utility will handle deletion safely.
             await leaveCall(callId);
         }
         cleanup(shouldRedirect);
@@ -100,18 +96,31 @@ export default function CallPage() {
         }
     };
     
-    const setupPeerListeners = useCallback((peer: Peer.Instance, callDocId: string, isInitiator: boolean) => {
-        const callerCandidates = collection(db, 'calls', callDocId, 'callerCandidates');
-        const receiverCandidates = collection(db, 'calls', callDocId, 'receiverCandidates');
+    const setupPeerListeners = useCallback((peer: Peer.Instance, callDocId: string, currentUserId: string) => {
         
-        const localCandidatesCollection = isInitiator ? callerCandidates : receiverCandidates;
-        const remoteCandidatesCollection = isInitiator ? receiverCandidates : callerCandidates;
-
-        peer.on('signal', async (data) => {
-            if(data.candidate) { // ICE candidate
-                await addDoc(localCandidatesCollection, { candidate: JSON.stringify(data.candidate) });
+        const signalCandidate = async (isInitiator: boolean, data: any) => {
+             if(data.candidate && callStatus !== 'ended') {
+                const candidatesCollection = collection(db, 'calls', callDocId, isInitiator ? 'callerCandidates' : 'receiverCandidates');
+                await addDoc(candidatesCollection, { candidate: JSON.stringify(data.candidate) });
             }
-        });
+        };
+
+        const listenForCandidates = (isInitiator: boolean) => {
+            const remoteCandidatesCollection = collection(db, 'calls', callDocId, isInitiator ? 'receiverCandidates' : 'callerCandidates');
+            const unsubscribeCandidates = onSnapshot(remoteCandidatesCollection, (snapshot) => {
+                snapshot.docChanges().forEach(async (change) => {
+                    if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
+                       try {
+                            peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                            await deleteDoc(change.doc.ref);
+                       } catch(err) {
+                            console.error("Error signaling candidate", err);
+                       }
+                    }
+                });
+            });
+            unsubscribes.current.push(unsubscribeCandidates);
+        }
 
         peer.on('stream', (remoteStream) => {
             if (remoteVideoRef.current) {
@@ -127,21 +136,17 @@ export default function CallPage() {
             cleanup();
         });
 
-        const unsubscribeCandidates = onSnapshot(remoteCandidatesCollection, (snapshot) => {
-            snapshot.docChanges().forEach(async (change) => {
-                if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
-                   try {
-                        peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
-                   } catch(err) {
-                        console.error("Error signaling candidate", err);
-                   }
-                   await deleteDoc(change.doc.ref);
-                }
-            });
+        // The logic for who is the initiator is based on the call document
+        getDoc(doc(db, 'calls', callDocId)).then(docSnap => {
+            if (docSnap.exists()) {
+                const call = docSnap.data() as Call;
+                const isInitiator = call.caller.id === currentUserId;
+                peer.on('signal', (data) => signalCandidate(isInitiator, data));
+                listenForCandidates(isInitiator);
+            }
         });
-        unsubscribes.current.push(unsubscribeCandidates);
 
-    }, [cleanup, toast]);
+    }, [cleanup, toast, callStatus]);
 
 
     useEffect(() => {
@@ -149,11 +154,12 @@ export default function CallPage() {
 
         let isComponentMounted = true;
         
-        const startMediaAndInitializeCall = async () => {
+        const initializeCall = async () => {
             const callDocRef = doc(db, 'calls', callId);
 
-            // For instant meetings, initiator creates the doc immediately
-            if (!isJoining && !contactName) {
+            // For instant meetings, initiator might need to create the doc.
+            const callDocSnap = await getDoc(callDocRef);
+            if (!callDocSnap.exists() && !isJoining) {
                 await setDoc(callDocRef, { 
                     type: 'instant',
                     caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
@@ -169,16 +175,16 @@ export default function CallPage() {
                     return;
                 };
 
+                localStreamRef.current = stream;
+                if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+                setHasCameraPermission(true);
+
                 const audioTrack = stream.getAudioTracks()[0];
                 if (audioTrack) audioTrack.enabled = isMicOn;
                 const videoTrack = stream.getVideoTracks()[0];
                 if (videoTrack) videoTrack.enabled = isCameraOn;
 
-                localStreamRef.current = stream;
-                if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-                setHasCameraPermission(true);
 
-                // Now that media is ready, start listening to the call document
                 const unsubCallDoc = onSnapshot(callDocRef, async (snapshot) => {
                     if (!isComponentMounted) {
                          unsubCallDoc();
@@ -194,25 +200,26 @@ export default function CallPage() {
                     const data = snapshot.data() as Call;
                     setCallData(data);
                     
-                    if ((data.status === 'declined' || data.status === 'missed' || data.status === 'ended') && callStatus !== 'ended') {
-                        toast({ title: `Call ${data.status}`, variant: 'destructive'});
+                    if (data.status === 'ended' && callStatus !== 'ended') {
+                        toast({ title: `Call ended`, variant: 'destructive'});
                         cleanup();
                         return;
                     }
 
-                    // Only initialize the peer once
                     if (!peerRef.current && (data.status === 'ringing' || data.status === 'answered' || data.status === 'active')) {
                         const isInitiator = data.caller.id === user.uid;
                         
+                        // Don't create peer for receiver of a ringing call until they answer
+                        if(data.status === 'ringing' && !isInitiator) return;
+                        
                         const peer = new Peer({ initiator: isInitiator, trickle: true, stream });
                         peerRef.current = peer;
-
-                        setupPeerListeners(peer, callId, isInitiator);
+                        setupPeerListeners(peer, callId, user.uid);
 
                         if (isInitiator) {
                              if (!data.offer) {
                                 peer.on('signal', async (offer) => {
-                                    if (offer.type === 'offer') {
+                                    if (offer.type === 'offer' && callStatus !== 'ended') {
                                         await updateDoc(callDocRef, { offer: JSON.stringify(offer) });
                                     }
                                 });
@@ -223,18 +230,12 @@ export default function CallPage() {
                                 }
                              }
                         } else { // Is receiver/joiner
-                            // For direct calls, receiver needs to answer first
-                            if (data.type === 'direct' && data.status === 'ringing') {
-                                // Handled by incoming call dialog
-                                return;
-                            }
-
-                            // For instant meetings or answered direct calls
                             if(data.offer && peer) {
-                                peer.signal(JSON.parse(data.offer));
-
+                                if (!peerRef.current.destroyed && peerRef.current.signalingState !== 'stable') {
+                                    peerRef.current.signal(JSON.parse(data.offer));
+                                }
                                 peer.on('signal', async (answer) => {
-                                    if (answer.type === 'answer' && !data.answer) {
+                                    if (answer.type === 'answer' && !data.answer && callStatus !== 'ended') {
                                        await updateDoc(callDocRef, { answer: JSON.stringify(answer), status: 'answered' });
                                     }
                                 });
@@ -258,7 +259,7 @@ export default function CallPage() {
             }
         };
 
-        startMediaAndInitializeCall();
+        initializeCall();
 
         return () => {
              isComponentMounted = false;
@@ -303,7 +304,7 @@ export default function CallPage() {
                         <div>
                             <h2 className="font-semibold">{callTitle}</h2>
                             <p className="text-xs text-muted-foreground">
-                                Status: <span className="capitalize">{callStatus}</span>
+                                Status: <span className="capitalize">{callData?.status === 'answered' ? 'connected' : (callStatus === 'ended' ? 'ended' : (callData?.status || callStatus))}</span>
                             </p>
                             {isInstantMeeting && (
                                 <p className="text-xs text-muted-foreground mt-1">
@@ -324,7 +325,7 @@ export default function CallPage() {
                 <main className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 p-2 pt-20 h-full">
                      <div className="relative w-full h-full aspect-video rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center">
                         <video ref={remoteVideoRef} className="w-full h-full object-cover" autoPlay playsInline />
-                        {callStatus !== 'connected' && (
+                        {callStatus !== 'connected' && callData?.status !== 'answered' && (
                             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/80">
                                 <Spinner size="large" />
                                 <p className="text-muted-foreground">{callStatus === 'connecting' ? 'Connecting...' : 'Call Ended'}</p>

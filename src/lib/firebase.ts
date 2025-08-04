@@ -94,20 +94,33 @@ export const addContact = async (fromUserId: string, toUserEmail: string) => {
     const fromUser = fromUserDoc.data() as User;
 
     const requestsRef = collection(db, 'friendRequests');
-    const existingRequestQuery = query(requestsRef, 
-        where('from', 'in', [fromUserId, toUserId]),
-        where('to', 'in', [fromUserId, toUserId])
+    // Check for pending requests in either direction
+    const existingRequestQuery1 = query(requestsRef, 
+        where('from', '==', fromUserId),
+        where('to', '==', toUserId)
     );
-    const existingRequestSnapshot = await getDocs(existingRequestQuery);
-    if (!existingRequestSnapshot.empty) {
-        const existingRequest = existingRequestSnapshot.docs[0].data();
-        if (existingRequest.status === 'pending') {
+     const existingRequestQuery2 = query(requestsRef, 
+        where('from', '==', toUserId),
+        where('to', '==', fromUserId)
+    );
+
+    const [snapshot1, snapshot2] = await Promise.all([
+        getDocs(existingRequestQuery1),
+        getDocs(existingRequestQuery2)
+    ]);
+    
+    const existingRequest = [...snapshot1.docs, ...snapshot2.docs];
+
+    if (existingRequest.length > 0) {
+        const requestData = existingRequest[0].data();
+         if (requestData.status === 'pending') {
             return { success: false, message: "A friend request is already pending." };
         }
-         if (existingRequest.status === 'accepted') {
+         if (requestData.status === 'accepted') {
             return { success: false, message: "This user is already a contact." };
         }
     }
+
 
     await addDoc(requestsRef, {
         from: fromUserId,
@@ -232,7 +245,9 @@ export const onIncomingCall = (userId: string, callback: (call: Call | null) => 
     const q = query(
         collection(db, 'calls'),
         where('receiver.id', '==', userId),
-        where('status', '==', 'ringing')
+        where('status', '==', 'ringing'),
+        orderBy('createdAt', 'desc'),
+        limit(1)
     );
 
     return onSnapshot(q, (snapshot) => {
@@ -240,11 +255,8 @@ export const onIncomingCall = (userId: string, callback: (call: Call | null) => 
             callback(null);
             return;
         }
-        // If there are multiple, sort by creation time and take the latest.
-        const calls = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Call))
-            .sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
-        
-        callback(calls[0]);
+        const call = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Call;
+        callback(call);
     }, (error) => {
         console.error("Error listening for incoming calls:", error);
         callback(null);
@@ -257,16 +269,10 @@ export const answerCall = async (callId: string) => {
 };
 
 export const declineOrEndCall = async (callId: string) => {
-    try {
-        const callRef = doc(db, 'calls', callId);
-        const callSnap = await getDoc(callRef);
-        if(callSnap.exists()){
-            // Update status to allow the other user to know the call was declined/ended
-            await updateDoc(callRef, { status: 'ended' });
-             // A cloud function or a timeout on the client could delete the doc after a while
-        }
-    } catch (error) {
-        console.error("Error declining/ending call: ", error);
+    const callRef = doc(db, 'calls', callId);
+    const callSnap = await getDoc(callRef);
+    if (callSnap.exists()) {
+        await updateDoc(callRef, { status: 'ended' });
     }
 };
 
@@ -287,22 +293,13 @@ export const leaveCall = async (callId: string) => {
             const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
             receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
             
-            // For direct calls, we mark as ended. For instant, we delete.
-            const callData = callSnap.data();
-            if (callData.type === 'instant') {
-                batch.delete(callRef);
-            } else {
-                batch.update(callRef, { status: 'ended' });
-            }
+            batch.delete(callRef);
+
             await batch.commit();
         }
     } catch (error) {
         // This can happen if the other user hangs up first. It's safe to ignore.
-        if (error instanceof Error && error.message.includes("No document to update")) {
-            console.log("Call document already deleted by other user.");
-        } else {
-            console.error("Error leaving call and cleaning up: ", error);
-        }
+        console.error("Error leaving call and cleaning up: ", error);
     }
 }
 
