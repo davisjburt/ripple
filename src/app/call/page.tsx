@@ -176,10 +176,14 @@ export default function CallPage() {
         let stream: MediaStream | null = null;
         
         const startMediaAndCall = async () => {
-             // For instant meetings, initiator creates the doc immediately
             const callDocRef = doc(db, 'calls', callId);
+            
+            // For instant meetings, initiator creates the doc immediately
             if (!isJoining && !invitationId) {
-                await setDoc(callDocRef, { initiator: user.uid, createdAt: new Date() });
+                 const callDocSnap = await getDoc(callDocRef);
+                 if (!callDocSnap.exists()) {
+                    await setDoc(callDocRef, { initiator: user.uid, createdAt: new Date() });
+                 }
             }
 
             try {
@@ -243,7 +247,14 @@ export default function CallPage() {
                     const offer = JSON.parse(callDocSnap.data().offer);
                     peer.on('signal', async (answer) => {
                         if (answer.type === 'answer') {
-                            await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
+                           try {
+                               const docToUpdate = await getDoc(callDocRef);
+                               if(docToUpdate.exists()){
+                                   await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
+                               }
+                           } catch(e) {
+                               console.error("Failed to update answer", e);
+                           }
                         }
                     });
 
@@ -407,5 +418,3 @@ export default function CallPage() {
         </div>
     );
 }
-
-    
