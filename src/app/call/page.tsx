@@ -237,9 +237,9 @@ export default function CallPage() {
                         callDocSnap = await getDoc(callDocRef);
                     }
                     
-                    if (!callDocSnap.exists() || !callDocSnap.data()?.offer) {
+                    if (!isComponentMounted || !callDocSnap.exists() || !callDocSnap.data()?.offer) {
                         toast({ title: "Call not found or has been ended.", variant: "destructive" });
-                        if (isComponentMounted) cleanup();
+                        cleanup();
                         return;
                     }
 
@@ -276,7 +276,7 @@ export default function CallPage() {
              handleLeaveCall(false);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user, callId, isJoining]);
+    }, [user, callId]);
     
     const handleInvite = () => {
         const inviteLink = `${window.location.origin}/call?id=${callId}&join=true`;
