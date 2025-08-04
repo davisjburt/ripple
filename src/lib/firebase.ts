@@ -207,11 +207,6 @@ export const getChatRooms = (userId: string, callback: (rooms: ChatRoom[]) => vo
 export const startCall = async (caller: User, receiver: User) => {
     // Create the main call document for WebRTC signaling
     const callDocRef = doc(collection(db, 'calls'));
-    await setDoc(callDocRef, {
-        createdAt: serverTimestamp(),
-        participants: [caller.uid, receiver.id],
-        initiator: caller.uid,
-    });
     
     // Create a separate invitation document for the receiver to listen to
     const invitationRef = doc(collection(db, 'callInvitations'));
@@ -264,7 +259,6 @@ export const declineOrEndCall = async (invitationId: string) => {
         const invitationRef = doc(db, 'callInvitations', invitationId);
         const invitationSnap = await getDoc(invitationRef);
         if(invitationSnap.exists()){
-            // Just update the status. The initiator is responsible for full cleanup.
             await updateDoc(invitationRef, { status: 'declined' });
         }
     } catch (error) {
@@ -272,7 +266,7 @@ export const declineOrEndCall = async (invitationId: string) => {
     }
 };
 
-// 5. Initiator leaves a direct call and cleans everything up
+// 5. Initiator or Receiver leaves a direct call and cleans everything up
 export const leaveCall = async (invitationId: string) => {
      try {
         const invitationRef = doc(db, 'callInvitations', invitationId);
@@ -285,10 +279,13 @@ export const leaveCall = async (invitationId: string) => {
                 const callDocRef = doc(db, 'calls', callId);
                 const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
                 const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
+                
                 const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
-                const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
                 callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+
+                const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
                 receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                
                 batch.delete(callDocRef);
             }
             

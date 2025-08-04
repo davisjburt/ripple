@@ -37,7 +37,6 @@ export default function CallPage() {
     const invitationId = searchParams.get('invitationId');
 
     const [callStatus, setCallStatus] = useState<'connecting' | 'connected' | 'ended'>('connecting');
-    const [answerApplied, setAnswerApplied] = useState(false);
     
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -45,7 +44,6 @@ export default function CallPage() {
     const localStreamRef = useRef<MediaStream | null>(null);
     
     const unsubscribes = useRef<(() => void)[]>([]);
-    const isComponentMountedRef = useRef(true);
 
 
     const cleanup = useCallback((shouldRedirect = true) => {
@@ -153,9 +151,7 @@ export default function CallPage() {
             snapshot.docChanges().forEach(async (change) => {
                 if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
                    try {
-                        if (peerRef.current.signalingState !== 'stable' || isJoining) {
-                             peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
-                        }
+                        peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
                    } catch(err) {
                         console.error("Error signaling candidate", err);
                    }
@@ -165,152 +161,110 @@ export default function CallPage() {
         });
         unsubscribes.current.push(unsubscribeCandidates);
 
-    }, [cleanup, toast, isJoining]);
+    }, [cleanup, toast]);
 
 
     useEffect(() => {
-        isComponentMountedRef.current = true;
-
         if (!user || !callId) return;
 
-        const startMedia = async () => {
+        let isComponentMounted = true;
+        let peer: Peer.Instance | null = null;
+        let stream: MediaStream | null = null;
+        
+        const startMediaAndCall = async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                if (!isComponentMountedRef.current) {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                if (!isComponentMounted) {
                     stream.getTracks().forEach(track => track.stop());
-                    return null;
+                    return;
                 };
 
                 const audioTrack = stream.getAudioTracks()[0];
-                if (audioTrack) {
-                    audioTrack.enabled = isMicOn;
-                }
-                 const videoTrack = stream.getVideoTracks()[0];
-                if (videoTrack) {
-                    videoTrack.enabled = isCameraOn;
-                }
+                if (audioTrack) audioTrack.enabled = isMicOn;
+                const videoTrack = stream.getVideoTracks()[0];
+                if (videoTrack) videoTrack.enabled = isCameraOn;
 
                 localStreamRef.current = stream;
-                if (localVideoRef.current) {
-                    localVideoRef.current.srcObject = stream;
-                }
+                if (localVideoRef.current) localVideoRef.current.srcObject = stream;
                 setHasCameraPermission(true);
-                return stream;
-            } catch (err) {
-                console.error("Failed to get media", err);
-                if (isComponentMountedRef.current) {
-                    setHasCameraPermission(false);
-                    toast({
-                        title: "Camera/Mic access denied",
-                        description: "Please allow access to your camera and microphone.",
-                        variant: "destructive"
+
+                peer = new Peer({ initiator: !isJoining, trickle: true, stream });
+                peerRef.current = peer;
+
+                setupPeerListeners(peer, callId, !isJoining);
+
+                const callDocRef = doc(db, 'calls', callId);
+
+                if (!isJoining) { // Initiating a call
+                    peer.on('signal', async (offer) => {
+                        if (offer.type === 'offer') {
+                            await setDoc(callDocRef, { 
+                                initiator: user.uid, 
+                                createdAt: new Date(),
+                                offer: JSON.stringify(offer)
+                            }, { merge: true });
+                        }
                     });
-                }
-                return null;
-            }
-        };
 
-        const initiateCall = async (stream: MediaStream) => {
-            const peer = new Peer({ initiator: true, trickle: true });
-            peerRef.current = peer;
+                    const unsubDoc = onSnapshot(callDocRef, (snapshot) => {
+                        if (!snapshot.exists()) {
+                             if (isComponentMounted) cleanup();
+                             return;
+                        }
+                        const data = snapshot.data();
+                        if (isComponentMounted && peerRef.current && !peerRef.current.destroyed && data?.answer) {
+                           try {
+                             if (peerRef.current.signalingState !== 'stable') {
+                                peerRef.current.signal(JSON.parse(data.answer));
+                             }
+                           } catch(err) {
+                             console.error("Error applying answer", err);
+                           }
+                        }
+                    });
+                    unsubscribes.current.push(unsubDoc);
+                } else { // Joining a call
+                    const callDocSnap = await getDoc(callDocRef);
+                    if (!callDocSnap.exists()) {
+                        toast({ title: "Call not found or has been ended.", variant: "destructive" });
+                        if (isComponentMounted) cleanup();
+                        return;
+                    }
 
-            peer.addStream(stream);
-
-            const callDocRef = doc(db, 'calls', callId);
-            
-            peer.on('signal', async (offer) => {
-                if(offer.type === 'offer') {
-                    await setDoc(callDocRef, { 
-                        initiator: user.uid, 
-                        createdAt: new Date(),
-                        offer: JSON.stringify(offer)
-                    }, { merge: true });
-                }
-            });
-
-            const unsubDoc = onSnapshot(callDocRef, (snapshot) => {
-                 if (!snapshot.exists() && !snapshot.metadata.hasPendingWrites) {
-                     if (isComponentMountedRef.current) cleanup();
-                     return;
-                }
-                const data = snapshot.data();
-                if (isComponentMountedRef.current && peerRef.current && !peerRef.current.destroyed && data?.answer && !answerApplied) {
-                   try {
-                     if (peerRef.current.signalingState !== 'stable') {
-                        setAnswerApplied(true);
-                        peerRef.current.signal(JSON.parse(data.answer));
-                     }
-                   } catch(err) {
-                     console.error("Error applying answer", err);
-                   }
-                }
-            });
-            unsubscribes.current.push(unsubDoc);
-            
-            setupPeerListeners(peer, callId, true);
-        };
-
-        const joinCall = async (stream: MediaStream) => {
-            const callDocRef = doc(db, 'calls', callId);
-            
-            const unsubscribeOffer = onSnapshot(callDocRef, async (callDocSnap) => {
-                 if (!isComponentMountedRef.current || (peerRef.current && !peerRef.current.destroyed)) return;
-                 
-                 if (!callDocSnap.exists() && callDocSnap.metadata.hasPendingWrites === false) {
-                     toast({ title: "Call not found or has been ended.", variant: "destructive" });
-                     if (isComponentMountedRef.current) cleanup();
-                     return;
-                 }
-
-                 if (callDocSnap.exists() && callDocSnap.data()?.offer) {
-                    unsubscribeOffer();
-                    
-                    const peer = new Peer({ initiator: false, trickle: true });
-                    peerRef.current = peer;
-
-                    peer.addStream(stream);
-                    
                     const offer = JSON.parse(callDocSnap.data().offer);
-                    
                     peer.on('signal', async (answer) => {
                         if (answer.type === 'answer') {
-                            await setDoc(callDocRef, { answer: JSON.stringify(answer) }, { merge: true });
+                            await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
                         }
                     });
 
                     try {
-                        if (peer.signalingState !== 'stable') {
-                             peer.signal(offer);
-                        }
+                        peer.signal(offer);
                     } catch (err) {
                         console.error("Error signaling offer", err);
                     }
-                    
-                    setupPeerListeners(peer, callId, false);
-                 }
-            }, (error) => {
-                console.error("Error listening for call offer: ", error);
-                toast({ title: "Call not found or invalid.", variant: "destructive" });
-                 if (isComponentMountedRef.current) cleanup();
-            });
-            unsubscribes.current.push(unsubscribeOffer);
-        };
-
-        startMedia().then(stream => {
-            if(stream && isComponentMountedRef.current) {
-                if(isJoining) {
-                    joinCall(stream);
-                } else {
-                    initiateCall(stream);
+                }
+            } catch (err) {
+                console.error("Failed to start call", err);
+                if (isComponentMounted) {
+                    setHasCameraPermission(false);
+                    toast({
+                        title: "Could not start call",
+                        description: "Please allow access to your camera and microphone.",
+                        variant: "destructive"
+                    });
                 }
             }
-        });
+        };
+
+        startMediaAndCall();
 
         return () => {
-             isComponentMountedRef.current = false;
+             isComponentMounted = false;
              handleLeaveCall(false);
         }
-    }, [user, callId, isJoining, setupPeerListeners, toast, cleanup, answerApplied, handleLeaveCall]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user, callId, isJoining]);
     
     const handleInvite = () => {
         const inviteLink = window.location.href.replace('&join=true', '') + '&join=true';
@@ -442,5 +396,3 @@ export default function CallPage() {
         </div>
     );
 }
-
-    
