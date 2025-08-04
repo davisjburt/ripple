@@ -241,9 +241,12 @@ export const onIncomingCall = (userId: string, callback: (call: CallInvitation |
             callback(null);
             return;
         }
-        const ringingInvitation = snapshot.docs[0].data() as CallInvitation;
-        ringingInvitation.id = snapshot.docs[0].id;
+        const ringingInvitationDoc = snapshot.docs[0];
+        const ringingInvitation = { id: ringingInvitationDoc.id, ...ringingInvitationDoc.data() } as CallInvitation;
         callback(ringingInvitation);
+    }, (error) => {
+        console.error("Error listening for incoming calls:", error);
+        callback(null);
     });
 };
 
