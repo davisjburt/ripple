@@ -121,10 +121,15 @@ function CallRoom({ callId }: { callId: string }) {
                     }
                     
                     if (!snapshot.exists()) {
-                         toast({ title: "Call not found or has ended.", variant: "destructive" });
-                         cleanup();
-                         router.push('/');
-                         return;
+                         const callDoc = await getDoc(callDocRef);
+                         if (!callDoc.exists()) {
+                            await setDoc(callDocRef, { 
+                                type: 'instant',
+                                caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
+                                status: 'active',
+                                createdAt: serverTimestamp() 
+                            });
+                         }
                     }
 
                     const data = snapshot.data() as Call;
@@ -140,16 +145,7 @@ function CallRoom({ callId }: { callId: string }) {
                     }
 
                     if (!peerRef.current && (data.status === 'ringing' || data.status === 'answered' || data.status === 'active')) {
-                        const callDoc = await getDoc(callDocRef);
-                        if (!callDoc.exists()) {
-                            await setDoc(callDocRef, { 
-                                type: 'instant',
-                                caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
-                                status: 'active',
-                                createdAt: serverTimestamp() 
-                            });
-                        }
-                        
+                       
                         const isInitiator = data.caller.id === user.uid;
                         
                         if(data.status === 'ringing' && !isInitiator) return;
@@ -238,8 +234,7 @@ function CallRoom({ callId }: { callId: string }) {
              isComponentMounted = false;
              handleLeaveCall(false);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [user, callId]);
     
     const handleInvite = () => {
         const inviteLink = `${window.location.origin}/call?id=${callId}&join=true`;
