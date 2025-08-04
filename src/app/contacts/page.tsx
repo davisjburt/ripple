@@ -181,7 +181,7 @@ export default function ContactsPage() {
                 {/* Headers - visible on md and up */}
                  <div className="hidden md:flex items-center p-4 font-medium text-muted-foreground">
                     <div className="flex-1">Name</div>
-                    <div className="w-28 text-right">Actions</div>
+                    <div className="w-40 text-right">Actions</div>
                 </div>
                 
                 {contacts.length === 0 && (
@@ -211,14 +211,14 @@ export default function ContactsPage() {
                           </div>
                         </div>
                     </div>
-                    <div className="w-full md:w-28 flex items-center justify-start md:justify-end gap-2">
+                    <div className="w-full md:w-auto flex items-center justify-start md:justify-end gap-2">
                         <Button variant="outline" size="sm" asChild className="flex-1 md:flex-initial">
                            <Link href={`/chat/${contact.id}`}>
                                 <MessageSquare className="h-4 w-4 mr-2" />
                                 <span>Chat</span>
                            </Link>
                         </Button>
-                        <Button variant="outline" size="icon" onClick={() => handleStartCall(contact)}>
+                        <Button variant="outline" size="icon" className="flex-initial" onClick={() => handleStartCall(contact)}>
                             <Phone className="h-5 w-5 text-primary" />
                         </Button>
                     </div>
@@ -263,7 +263,7 @@ export default function ContactsPage() {
                                     <div className="text-sm text-muted-foreground">{request.fromEmail}</div>
                                 </div>
                             </div>
-                            <div className="w-full md:w-28 flex items-center justify-start md:justify-end gap-2">
+                            <div className="w-full md:w-auto flex items-center justify-start md:justify-end gap-2">
                                 <Button variant="outline" size="icon" className="text-green-500 border-green-500 hover:bg-green-500/10 hover:text-green-600" onClick={() => respondToRequest(request.id, true)}>
                                     <Check className="h-4 w-4" />
                                 </Button>
@@ -281,5 +281,3 @@ export default function ContactsPage() {
     </div>
   );
 }
-
-    
