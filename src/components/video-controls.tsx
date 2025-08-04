@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/comp
 import { Mic, MicOff, Video, VideoOff, PhoneOff, ScreenShare, MessageSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
 
 interface VideoControlsProps {
     isCameraOn: boolean;
@@ -14,9 +15,10 @@ interface VideoControlsProps {
     onMicToggle: () => void;
     onLeave: () => void;
     onToggleChat: () => void;
+    isChatOpen?: boolean;
 }
 
-export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle, onLeave, onToggleChat }: VideoControlsProps) {
+export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle, onLeave, onToggleChat, isChatOpen }: VideoControlsProps) {
   const router = useRouter();
   
   const handleLeave = () => {
@@ -43,10 +45,11 @@ export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle
       onClick: () => {}, // TODO: Implement screen sharing
     },
     {
-      label: 'Show chat',
+      label: isChatOpen ? 'Hide chat' : 'Show chat',
       icon: <MessageSquare />,
       onClick: onToggleChat,
-      className: 'md:hidden' // Only show on mobile
+      className: 'md:hidden', // Only show on mobile
+      isActive: isChatOpen
     },
   ];
 
@@ -65,7 +68,11 @@ export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle
                 variant="ghost"
                 size="icon"
                 onClick={control.onClick}
-                className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white hover:bg-white/10 ${control.isActive === false ? 'bg-white/10' : ''} ${control.className || ''}`}
+                className={cn(`w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white hover:bg-white/10`, 
+                    control.isActive === false ? 'bg-white/10' : '',
+                    control.isActive === true && control.label.includes('chat') ? 'bg-primary/50 hover:bg-primary/60' : '',
+                    control.className || ''
+                )}
               >
                 {control.icon}
               </Button>

@@ -2,7 +2,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, UserPlus } from 'lucide-react';
+import { ChevronLeft, UserPlus, X } from 'lucide-react';
 import Link from 'next/link';
 import { VideoControls } from '@/components/video-controls';
 import { ChatPanel } from '@/components/chat-panel';
@@ -15,11 +15,15 @@ import { db } from '@/lib/firebase';
 import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
 import Peer from 'simple-peer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useIsMobile } from '@/hooks/use-mobile';
+
 
 export default function CallPage() {
     const { user } = useAuth();
     const { toast } = useToast();
     const searchParams = useSearchParams();
+    const isMobile = useIsMobile();
 
     const [isCameraOn, setIsCameraOn] = useState(true);
     const [isMicOn, setIsMicOn] = useState(true);
@@ -88,6 +92,14 @@ export default function CallPage() {
         cleanup();
     }, [callId, user, cleanup]);
 
+    useEffect(() => {
+        if (!isMobile) {
+            setIsChatPanelOpen(true);
+        } else {
+            setIsChatPanelOpen(false);
+        }
+    }, [isMobile]);
+
     const handleCameraToggle = () => {
         if (localStreamRef.current) {
             const videoTrack = localStreamRef.current.getVideoTracks()[0];
@@ -139,7 +151,7 @@ export default function CallPage() {
             snapshot.docChanges().forEach(async (change) => {
                 if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
                    try {
-                        if (peerRef.current.signalingState !== 'stable') {
+                        if (peerRef.current.signalingState !== 'stable' || isJoining) {
                              peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
                         }
                    } catch(err) {
@@ -151,7 +163,7 @@ export default function CallPage() {
         });
         unsubscribes.current.push(unsubscribeCandidates);
 
-    }, [cleanup, toast]);
+    }, [cleanup, toast, isJoining]);
 
 
     useEffect(() => {
@@ -243,13 +255,13 @@ export default function CallPage() {
                     
                     peer.on('signal', async (answer) => {
                         if (answer.type === 'answer') {
-                            await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
+                            await setDoc(callDocRef, { answer: JSON.stringify(answer) }, { merge: true });
                         }
                     });
 
                     try {
                         if (peer.signalingState !== 'stable') {
-                             peer.signal(offer);
+                             await peer.signal(offer);
                         }
                     } catch (err) {
                         console.error("Error signaling offer", err);
@@ -283,7 +295,7 @@ export default function CallPage() {
              handleLeaveCall();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user, callId, isJoining, toast]);
+    }, [user, callId, isJoining]);
     
 
     const callTitle = contactName ? `Call with ${contactName}` : `Call`;
@@ -313,7 +325,7 @@ export default function CallPage() {
                 </header>
 
                 {/* Main Video Grid */}
-                <main className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 p-2 md:p-4 pt-20 h-full">
+                <main className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 p-2 pt-20 h-full">
                      <div className="relative w-full h-full aspect-video rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center">
                         <video ref={remoteVideoRef} className="w-full h-full object-cover" autoPlay playsInline />
                         {callStatus !== 'connected' && (
@@ -355,14 +367,43 @@ export default function CallPage() {
                         onMicToggle={handleMicToggle}
                         onLeave={handleLeaveCall}
                         onToggleChat={() => setIsChatPanelOpen(!isChatPanelOpen)}
+                        isChatOpen={isChatPanelOpen}
                     />
                 </footer>
             </div>
 
             {/* Chat Panel */}
-            <aside className={`w-full md:w-96 bg-gray-900/50 backdrop-blur-xl border-l border-white/10 h-full flex-col ${isChatPanelOpen ? 'flex' : 'hidden md:flex'}`}>
-                <ChatPanel sessionId={callId || 'no-session'} />
-            </aside>
+            <AnimatePresence>
+                 {isChatPanelOpen && (
+                    <>
+                    {/* Backdrop for mobile */}
+                    {isMobile && (
+                         <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsChatPanelOpen(false)}
+                            className="absolute inset-0 bg-black/50 z-30 md:hidden"
+                        />
+                    )}
+                    <motion.aside
+                        initial={{ x: '100%' }}
+                        animate={{ x: 0 }}
+                        exit={{ x: '100%' }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                        className="w-full max-w-sm bg-gray-900/80 backdrop-blur-xl border-l border-white/10 h-full flex flex-col absolute right-0 top-0 z-40 md:relative md:w-96"
+                    >
+                         <div className="p-4 border-b border-white/10 flex items-center justify-between md:hidden">
+                            <h3 className="font-semibold">Meeting Chat</h3>
+                            <Button variant="ghost" size="icon" onClick={() => setIsChatPanelOpen(false)}>
+                                <X className="h-5 w-5"/>
+                            </Button>
+                         </div>
+                        <ChatPanel sessionId={callId || 'no-session'} />
+                    </motion.aside>
+                    </>
+                 )}
+            </AnimatePresence>
         </div>
     );
 }
