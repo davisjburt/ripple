@@ -37,6 +37,7 @@ export default function CallPage() {
     const invitationId = searchParams.get('invitationId');
 
     const [callStatus, setCallStatus] = useState<'connecting' | 'connected' | 'ended'>('connecting');
+    const [answerApplied, setAnswerApplied] = useState(false);
     
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -175,6 +176,12 @@ export default function CallPage() {
         let stream: MediaStream | null = null;
         
         const startMediaAndCall = async () => {
+             // For instant meetings, initiator creates the doc immediately
+            const callDocRef = doc(db, 'calls', callId);
+            if (!isJoining && !invitationId) {
+                await setDoc(callDocRef, { initiator: user.uid, createdAt: new Date() });
+            }
+
             try {
                 stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 if (!isComponentMounted) {
@@ -196,25 +203,22 @@ export default function CallPage() {
 
                 setupPeerListeners(peer, callId, !isJoining);
 
-                const callDocRef = doc(db, 'calls', callId);
-
                 if (!isJoining) { // Initiating a call
                     peer.on('signal', async (offer) => {
                         if (offer.type === 'offer') {
-                            await setDoc(callDocRef, { 
-                                initiator: user.uid, 
-                                createdAt: new Date(),
+                            await updateDoc(callDocRef, { 
                                 offer: JSON.stringify(offer)
-                            }, { merge: true });
+                            });
                         }
                     });
 
                     const unsubDoc = onSnapshot(callDocRef, (snapshot) => {
                         const data = snapshot.data();
-                        if (peerRef.current && !peerRef.current.destroyed && data?.answer) {
+                        if (peerRef.current && !peerRef.current.destroyed && data?.answer && !answerApplied) {
                            try {
                              if (peerRef.current.signalingState !== 'stable') {
                                 peerRef.current.signal(JSON.parse(data.answer));
+                                setAnswerApplied(true);
                              }
                            } catch(err) {
                              console.error("Error applying answer", err);
@@ -223,8 +227,14 @@ export default function CallPage() {
                     });
                     unsubscribes.current.push(unsubDoc);
                 } else { // Joining a call
-                    const callDocSnap = await getDoc(callDocRef);
-                    if (!callDocSnap.exists()) {
+                    let callDocSnap = await getDoc(callDocRef);
+                    // Retry mechanism for joining
+                    if (!callDocSnap.exists() || !callDocSnap.data()?.offer) {
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                        callDocSnap = await getDoc(callDocRef);
+                    }
+                    
+                    if (!callDocSnap.exists() || !callDocSnap.data()?.offer) {
                         toast({ title: "Call not found or has been ended.", variant: "destructive" });
                         if (isComponentMounted) cleanup();
                         return;
@@ -306,7 +316,7 @@ export default function CallPage() {
                             )}
                         </div>
                     </div>
-                    {!invitationId && (
+                    {!invitationId && !contactName && (
                         <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30" onClick={handleInvite}>
                             <Copy className="mr-2 h-4 w-4" />
                             Copy Invite Link
