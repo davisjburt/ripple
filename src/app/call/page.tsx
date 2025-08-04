@@ -207,12 +207,8 @@ export default function CallPage() {
                     });
 
                     const unsubDoc = onSnapshot(callDocRef, (snapshot) => {
-                        if (!snapshot.exists()) {
-                             if (isComponentMounted) cleanup();
-                             return;
-                        }
                         const data = snapshot.data();
-                        if (isComponentMounted && peerRef.current && !peerRef.current.destroyed && data?.answer) {
+                        if (peerRef.current && !peerRef.current.destroyed && data?.answer) {
                            try {
                              if (peerRef.current.signalingState !== 'stable') {
                                 peerRef.current.signal(JSON.parse(data.answer));
@@ -267,7 +263,7 @@ export default function CallPage() {
     }, [user, callId, isJoining]);
     
     const handleInvite = () => {
-        const inviteLink = window.location.href.replace('&join=true', '') + '&join=true';
+        const inviteLink = `${window.location.origin}/call?id=${callId}&join=true`;
         navigator.clipboard.writeText(inviteLink).then(() => {
             toast({
                 title: "Invite Link Copied!",
@@ -307,10 +303,12 @@ export default function CallPage() {
                             )}
                         </div>
                     </div>
-                    <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30" onClick={handleInvite}>
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copy Invite Link
-                    </Button>
+                    {!invitationId && (
+                        <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30" onClick={handleInvite}>
+                            <Copy className="mr-2 h-4 w-4" />
+                            Copy Invite Link
+                        </Button>
+                    )}
                 </header>
 
                 {/* Main Video Grid */}
@@ -396,3 +394,5 @@ export default function CallPage() {
         </div>
     );
 }
+
+    
