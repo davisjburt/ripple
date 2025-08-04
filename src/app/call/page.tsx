@@ -310,11 +310,10 @@ export default function CallPage() {
              isComponentMounted = false;
              handleLeaveCall(false);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user, callId, isJoining]);
+    }, [user, callId, isJoining, handleLeaveCall, setupPeerListeners]);
     
     const handleInvite = () => {
-        const inviteLink = window.location.href.replace('&answered=true', '') + '&join=true';
+        const inviteLink = window.location.href.replace('&join=true', '') + '&join=true';
         navigator.clipboard.writeText(inviteLink).then(() => {
             toast({
                 title: "Invite Link Copied!",
