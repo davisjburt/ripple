@@ -37,12 +37,11 @@ export default function CallPage() {
     const peerRef = useRef<Peer.Instance | null>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
     
-    // Unsubscribe listeners
     const unsubscribes = useRef<(() => void)[]>([]);
 
 
     const cleanup = useCallback(() => {
-        if (peerRef.current && !peerRef.current.destroyed) {
+        if (peerRef.current) {
             peerRef.current.destroy();
             peerRef.current = null;
         }
@@ -57,18 +56,17 @@ export default function CallPage() {
 
         unsubscribes.current.forEach(unsub => unsub());
         unsubscribes.current = [];
-
-        setCallStatus('ended');
         
+        setCallStatus('ended');
     }, []);
 
     const handleLeaveCall = useCallback(async () => {
         cleanup();
-        if (callId) {
+        if (callId && user) {
              try {
                 const callDocRef = doc(db, 'calls', callId);
                 const callDocSnap = await getDoc(callDocRef);
-
+                
                 if (callDocSnap.exists() && callDocSnap.data()?.initiator === user?.uid) {
                    const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
                    const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
@@ -141,7 +139,7 @@ export default function CallPage() {
                 if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
                    try {
                         if (peerRef.current.signalingState !== 'stable') {
-                            await peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                             peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
                         }
                    } catch(err) {
                         console.error("Error signaling candidate", err);
@@ -197,7 +195,6 @@ export default function CallPage() {
             
             peer.on('signal', async (offer) => {
                 if(offer.type === 'offer') {
-                    // Create/update the document with the offer
                     await setDoc(callDocRef, { 
                         initiator: user.uid, 
                         createdAt: new Date(),
@@ -210,15 +207,16 @@ export default function CallPage() {
                 const data = snapshot.data();
                 if (peerRef.current && !peerRef.current.destroyed && data?.answer && !answerApplied) {
                    try {
-                     setAnswerApplied(true);
-                     peerRef.current.signal(JSON.parse(data.answer));
-                     unsubscribe(); // Unsubscribe after applying the answer
+                     if (peerRef.current.signalingState !== 'stable') {
+                        setAnswerApplied(true);
+                        peerRef.current.signal(JSON.parse(data.answer));
+                        unsubscribe(); 
+                     }
                    } catch(err) {
-                     setAnswerApplied(false); 
                      console.error("Error applying answer", err);
                    }
-                } else if (!snapshot.exists()) {
-                    cleanup();
+                } else if (!snapshot.exists() && snapshot.metadata.hasPendingWrites === false) {
+                     if (isComponentMounted) cleanup();
                 }
             });
             unsubscribes.current.push(unsubscribe);
@@ -229,12 +227,11 @@ export default function CallPage() {
         const joinCall = async (stream: MediaStream) => {
             const callDocRef = doc(db, 'calls', callId);
             
-            // Wait for the offer to appear in the call document
             const unsubscribeOffer = onSnapshot(callDocRef, async (callDocSnap) => {
                  if (!isComponentMounted || (peerRef.current && !peerRef.current.destroyed)) return;
                  
                  if (callDocSnap.exists() && callDocSnap.data()?.offer) {
-                    unsubscribeOffer(); // We have the offer, we don't need this listener anymore
+                    unsubscribeOffer();
                     
                     const peer = new Peer({ initiator: false, trickle: true });
                     peerRef.current = peer;
@@ -258,15 +255,14 @@ export default function CallPage() {
                     }
                     
                     setupPeerListeners(peer, callId, false);
-                 } else if (!callDocSnap.exists()) {
-                     // The document was likely deleted or never created.
+                 } else if (!callDocSnap.exists() && callDocSnap.metadata.hasPendingWrites === false) {
                      toast({ title: "Call not found or has been ended.", variant: "destructive" });
-                     cleanup();
+                     if (isComponentMounted) cleanup();
                  }
             }, (error) => {
                 console.error("Error listening for call offer: ", error);
                 toast({ title: "Call not found or invalid.", variant: "destructive" });
-                cleanup();
+                 if (isComponentMounted) cleanup();
             });
             unsubscribes.current.push(unsubscribeOffer);
         };
@@ -285,7 +281,8 @@ export default function CallPage() {
              isComponentMounted = false;
              handleLeaveCall();
         }
-    }, [user, callId, isJoining, toast, answerApplied, setupPeerListeners, cleanup, handleLeaveCall]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user, callId, isJoining, toast]);
     
 
     const callTitle = contactName ? `Call with ${contactName}` : `Call`;
@@ -340,6 +337,11 @@ export default function CallPage() {
                                 <Spinner size="large" />
                              </div>
                          )}
+                         {!isCameraOn && hasCameraPermission && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                               <p>Camera is off</p>
+                            </div>
+                         )}
                     </div>
                 </main>
 
@@ -361,6 +363,5 @@ export default function CallPage() {
             </aside>
         </div>
     );
-}
 
     
