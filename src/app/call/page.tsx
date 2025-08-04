@@ -8,7 +8,7 @@ import { VideoControls } from '@/components/video-controls';
 import { ChatPanel } from '@/components/chat-panel';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Spinner } from '@/components/ui/spinner';
 import { db } from '@/lib/firebase';
@@ -23,6 +23,7 @@ export default function CallPage() {
     const { user } = useAuth();
     const { toast } = useToast();
     const searchParams = useSearchParams();
+    const router = useRouter();
     const isMobile = useIsMobile();
 
     const [isCameraOn, setIsCameraOn] = useState(true);
@@ -62,8 +63,14 @@ export default function CallPage() {
         unsubscribes.current.forEach(unsub => unsub());
         unsubscribes.current = [];
         
-        setCallStatus('ended');
-    }, []);
+        if (callStatus !== 'ended') {
+            setCallStatus('ended');
+        }
+
+        if(router) {
+            router.push('/');
+        }
+    }, [callStatus, router]);
 
     const handleLeaveCall = useCallback(async () => {
         if (callId && user) {
