@@ -134,7 +134,7 @@ export default function CallPage() {
         const remoteCandidatesCollection = isInitiating ? receiverCandidates : callerCandidates;
 
         peer.on('signal', async (data) => {
-            if(data.candidate) {
+            if(data.candidate && callStatus !== 'ended') {
                 await addDoc(localCandidatesCollection, { candidate: JSON.stringify(data.candidate) });
             }
         });
@@ -167,7 +167,7 @@ export default function CallPage() {
         });
         unsubscribes.current.push(unsubscribeCandidates);
 
-    }, [cleanup, toast]);
+    }, [cleanup, toast, callStatus]);
 
 
     useEffect(() => {
@@ -208,7 +208,7 @@ export default function CallPage() {
 
                 if (!isJoining) { // Initiating a call
                     peer.on('signal', async (offer) => {
-                        if (offer.type === 'offer') {
+                        if (offer.type === 'offer' && callStatus !== 'ended') {
                             await updateDoc(callDocRef, { 
                                 offer: JSON.stringify(offer)
                             });
@@ -245,7 +245,7 @@ export default function CallPage() {
 
                     const offer = JSON.parse(callDocSnap.data().offer);
                     peer.on('signal', async (answer) => {
-                        if (answer.type === 'answer') {
+                        if (answer.type === 'answer' && callStatus !== 'ended') {
                            await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
                         }
                     });
@@ -410,5 +410,3 @@ export default function CallPage() {
         </div>
     );
 }
-
-    
