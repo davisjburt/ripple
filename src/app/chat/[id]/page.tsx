@@ -23,6 +23,9 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/use-mobile';
+
 
 interface Message {
   id: string;
@@ -47,6 +50,8 @@ export default function ChatPage() {
   const [newMessage, setNewMessage] = useState('');
   const [contact, setContact] = useState<Contact | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+
 
   useEffect(() => {
     if (!user || !contactId) return;
@@ -138,7 +143,7 @@ export default function ChatPage() {
   
   if (!contact || !user) {
     return (
-        <div className="flex flex-col items-center justify-center h-full w-full bg-background">
+        <div className="hidden md:flex flex-col items-center justify-center h-full w-full bg-background">
             <MessageSquare className="w-16 h-16 text-muted-foreground" />
             <p className="mt-4 text-muted-foreground">Select a chat to start messaging</p>
         </div>
@@ -146,7 +151,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-muted/30 w-full">
+    <div className={cn("flex flex-col h-screen bg-muted/30", isMobile ? "w-full" : "w-full")}>
         <header className="p-4 border-b flex items-center gap-4 bg-background">
             <Button variant="ghost" size="icon" className="md:hidden" asChild>
                 <Link href="/chat">

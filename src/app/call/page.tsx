@@ -24,6 +24,7 @@ export default function CallPage() {
     const [isCameraOn, setIsCameraOn] = useState(true);
     const [isMicOn, setIsMicOn] = useState(true);
     const [hasCameraPermission, setHasCameraPermission] = useState(true);
+    const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
 
     const callId = searchParams.get('id');
     const contactName = searchParams.get('contactName');
@@ -248,7 +249,7 @@ export default function CallPage() {
 
                     try {
                         if (peer.signalingState !== 'stable') {
-                             await peer.signal(offer);
+                             peer.signal(offer);
                         }
                     } catch (err) {
                         console.error("Error signaling offer", err);
@@ -312,7 +313,7 @@ export default function CallPage() {
                 </header>
 
                 {/* Main Video Grid */}
-                <main className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 p-4 pt-20 h-full">
+                <main className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 p-2 md:p-4 pt-20 h-full">
                      <div className="relative w-full h-full aspect-video rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center">
                         <video ref={remoteVideoRef} className="w-full h-full object-cover" autoPlay playsInline />
                         {callStatus !== 'connected' && (
@@ -346,19 +347,20 @@ export default function CallPage() {
                 </main>
 
                 {/* Controls */}
-                <footer className="absolute bottom-0 left-1/2 -translate-x-1/2 z-20 p-4">
+                <footer className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 p-4">
                     <VideoControls
                         isCameraOn={isCameraOn}
                         onCameraToggle={handleCameraToggle}
                         isMicOn={isMicOn}
                         onMicToggle={handleMicToggle}
                         onLeave={handleLeaveCall}
+                        onToggleChat={() => setIsChatPanelOpen(!isChatPanelOpen)}
                     />
                 </footer>
             </div>
 
             {/* Chat Panel */}
-            <aside className="w-96 bg-gray-900/50 backdrop-blur-xl border-l border-white/10 h-full flex flex-col">
+            <aside className={`w-full md:w-96 bg-gray-900/50 backdrop-blur-xl border-l border-white/10 h-full flex-col ${isChatPanelOpen ? 'flex' : 'hidden md:flex'}`}>
                 <ChatPanel sessionId={callId || 'no-session'} />
             </aside>
         </div>

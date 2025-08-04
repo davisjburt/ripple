@@ -13,9 +13,10 @@ interface VideoControlsProps {
     isMicOn: boolean;
     onMicToggle: () => void;
     onLeave: () => void;
+    onToggleChat: () => void;
 }
 
-export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle, onLeave }: VideoControlsProps) {
+export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle, onLeave, onToggleChat }: VideoControlsProps) {
   const router = useRouter();
   
   const handleLeave = () => {
@@ -44,7 +45,8 @@ export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle
     {
       label: 'Show chat',
       icon: <MessageSquare />,
-      onClick: () => {}, // This would likely toggle a state in the parent
+      onClick: onToggleChat,
+      className: 'md:hidden' // Only show on mobile
     },
   ];
 
@@ -54,7 +56,7 @@ export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle
         initial={{ y: 100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 100, delay: 0.5 }}
-        className="flex items-center gap-2 p-2 rounded-full bg-black/50 backdrop-blur-md border border-white/20 shadow-2xl"
+        className="flex items-center gap-1 sm:gap-2 p-2 rounded-full bg-black/50 backdrop-blur-md border border-white/20 shadow-2xl"
       >
         {controls.map((control, index) => (
           <Tooltip key={index}>
@@ -63,7 +65,7 @@ export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle
                 variant="ghost"
                 size="icon"
                 onClick={control.onClick}
-                className={`w-14 h-14 rounded-full text-white hover:bg-white/10 ${control.isActive === false ? 'bg-white/10' : ''}`}
+                className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white hover:bg-white/10 ${control.isActive === false ? 'bg-white/10' : ''} ${control.className || ''}`}
               >
                 {control.icon}
               </Button>
@@ -74,14 +76,14 @@ export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle
           </Tooltip>
         ))}
 
-        <div className="w-px h-8 bg-white/20 mx-2" />
+        <div className="w-px h-8 bg-white/20 mx-1 sm:mx-2" />
 
         <Tooltip>
           <TooltipTrigger asChild>
               <Button
                 onClick={handleLeave}
                 size="icon"
-                className="w-16 h-14 rounded-full bg-red-600 hover:bg-red-700 text-white"
+                className="w-14 h-14 sm:w-16 sm:h-14 rounded-full bg-red-600 hover:bg-red-700 text-white"
               >
                 <PhoneOff />
               </Button>

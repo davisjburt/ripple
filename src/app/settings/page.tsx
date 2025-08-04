@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -112,7 +113,7 @@ export default function SettingsPage() {
                              <CardDescription>This is how other users will see you on the site.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="flex items-center gap-4">
+                            <div className="flex flex-col sm:flex-row items-center gap-4">
                                 <div className="relative">
                                     <Avatar className="h-24 w-24">
                                         <AvatarImage src={previewUrl || ''} alt={user.displayName || 'User'} />
@@ -167,7 +168,7 @@ export default function SettingsPage() {
                                         capture="environment"
                                     />
                                 </div>
-                                <div>
+                                <div className="text-center sm:text-left">
                                     <h3 className="text-lg font-semibold">{user.displayName}</h3>
                                     <p className="text-muted-foreground">{user.email}</p>
                                 </div>
@@ -180,7 +181,7 @@ export default function SettingsPage() {
                                     </Button>
                                     <Button variant="ghost" onClick={() => {
                                         setNewImage(null);
-                                        setPreviewUrl(user.photoURL);
+                                        setPreviewUrl(user.photoURL || null);
                                     }} disabled={loading}>
                                         Cancel
                                     </Button>

@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import { Spinner } from '@/components/ui/spinner';
 import { usePathname } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
 
 function NoChatSelected() {
     return (
@@ -26,6 +27,7 @@ export default function ChatsPage() {
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const pathname = usePathname();
+  const isChatDetailPage = pathname.includes('/chat/') && pathname !== '/chat';
 
   useEffect(() => {
     if (!user) {
@@ -43,7 +45,10 @@ export default function ChatsPage() {
   }, [user]);
 
   const ChatList = () => (
-    <div className="w-full md:w-96 border-r flex-col h-full bg-background hidden md:flex">
+    <div className={cn(
+        "w-full md:w-96 border-r flex-col h-full bg-background",
+        isChatDetailPage ? "hidden md:flex" : "flex"
+    )}>
       <header className="p-4 border-b">
         <h2 className="text-xl font-bold flex items-center gap-2"><MessageSquare /> Chats</h2>
       </header>
@@ -101,7 +106,7 @@ export default function ChatsPage() {
   return (
     <>
       <ChatList />
-      <NoChatSelected />
+       { !isChatDetailPage && <NoChatSelected /> }
     </>
   );
 }

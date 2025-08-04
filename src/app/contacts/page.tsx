@@ -141,7 +141,7 @@ export default function ContactsPage() {
         transition={{ duration: 0.5 }}
       >
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <CardTitle className="flex items-center gap-2">
               <Users />
               <span>Your Contacts ({contacts.length})</span>
@@ -184,11 +184,11 @@ export default function ContactsPage() {
               </DialogContent>
             </Dialog>
           </CardHeader>
-          <CardContent>
+          <CardContent className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[300px]">Name</TableHead>
+                  <TableHead>Name</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -225,7 +225,7 @@ export default function ContactsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-2">
+                      <div className="opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-2">
                         <Button variant="ghost" size="icon" asChild>
                            <Link href={`/chat/${contact.id}`}>
                                 <MessageSquare className="h-5 w-5 text-muted-foreground" />
@@ -257,7 +257,7 @@ export default function ContactsPage() {
                     <span>Friend Requests</span>
                 </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="overflow-x-auto">
                  <Table>
                     <TableHeader>
                         <TableRow>

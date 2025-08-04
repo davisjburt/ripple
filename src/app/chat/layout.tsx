@@ -13,7 +13,7 @@ export default function ChatLayout({
   const isChatListPage = pathname === '/chat';
 
   return (
-      <div className="flex h-screen bg-muted/30">
+      <div className="flex h-screen bg-muted/30 w-full">
         {children}
       </div>
   );

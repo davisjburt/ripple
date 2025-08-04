@@ -52,7 +52,7 @@ export default function Dashboard() {
         <p className="text-muted-foreground">Ready to connect? Here’s what’s on your plate today.</p>
       </motion.div>
 
-      <div className="grid gap-8 md:grid-cols-2">
+      <div className="grid gap-8 grid-cols-1 md:grid-cols-2">
         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.2 }}>
           <Card>
             <CardHeader>
@@ -83,12 +83,10 @@ export default function Dashboard() {
               <CardDescription>Enter a session ID to join an ongoing call.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-2">
-                <Input placeholder="Enter Session ID..." className="bg-background/80" value={sessionId} onChange={e => setSessionId(e.target.value)} />
-                <Link href={`/call?id=${sessionId}`}>
-                  <Button disabled={!sessionId}>Join</Button>
-                </Link>
-              </div>
+              <form action={`/call?id=${sessionId}`} className="flex gap-2">
+                 <Input placeholder="Enter Session ID..." className="bg-background/80" value={sessionId} onChange={e => setSessionId(e.target.value)} />
+                 <Button type="submit" disabled={!sessionId}>Join</Button>
+              </form>
             </CardContent>
           </Card>
         </motion.div>
@@ -105,8 +103,8 @@ export default function Dashboard() {
           <CardContent>
             <div className="space-y-4">
               {meetings.map((meeting, index) => (
-                <div key={index} className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors">
-                  <div className="font-semibold text-primary w-20">{meeting.time}</div>
+                <div key={index} className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="font-semibold text-primary w-full sm:w-20">{meeting.time}</div>
                   <div className="flex-1">
                     <p className="font-medium text-foreground">{meeting.title}</p>
                     <p className="text-sm text-muted-foreground">{meeting.duration}</p>
@@ -120,7 +118,7 @@ export default function Dashboard() {
                     ))}
                   </div>
                   <Button variant="ghost" size="icon" asChild>
-                    <Link href="/call">
+                    <Link href={`/call?id=${generateSessionId()}`}>
                       <ChevronRight className="h-5 w-5 text-muted-foreground" />
                     </Link>
                   </Button>
