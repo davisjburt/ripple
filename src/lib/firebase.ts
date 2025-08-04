@@ -232,9 +232,7 @@ export const onIncomingCall = (userId: string, callback: (call: Call | null) => 
     const invitationsQuery = query(
         collection(db, 'calls'),
         where('receiver.id', '==', userId),
-        where('status', '==', 'ringing'),
-        orderBy('createdAt', 'desc'),
-        limit(1)
+        where('status', '==', 'ringing')
     );
 
     return onSnapshot(invitationsQuery, (snapshot) => {
@@ -242,9 +240,11 @@ export const onIncomingCall = (userId: string, callback: (call: Call | null) => 
             callback(null);
             return;
         }
-        const ringingCallDoc = snapshot.docs[0];
-        const ringingCall = { id: ringingCallDoc.id, ...ringingCallDoc.data() } as Call;
-        callback(ringingCall);
+        // If there are multiple, sort by creation time and take the latest.
+        const calls = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Call))
+            .sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+        
+        callback(calls[0]);
     }, (error) => {
         console.error("Error listening for incoming calls:", error);
         callback(null);
@@ -262,8 +262,7 @@ export const declineOrEndCall = async (callId: string) => {
         const callSnap = await getDoc(callRef);
         if(callSnap.exists()){
             // Update status to allow the other user to know the call was declined/ended
-            await updateDoc(callRef, { status: 'declined' });
-            // The caller/receiver will then call leaveCall to do the full cleanup.
+            await updateDoc(callRef, { status: 'ended' });
         }
     } catch (error) {
         console.error("Error declining call: ", error);
