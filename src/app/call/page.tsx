@@ -120,6 +120,28 @@ function CallRoom({ callId }: { callId: string }) {
                          return;
                     }
                     
+                    const data = snapshot.data() as Call;
+                    setCallData(data);
+                    
+                    if (!data) {
+                        if (callStatus !== 'ended') {
+                            toast({ title: 'Call not found or has ended.', variant: 'destructive' });
+                            cleanup();
+                            router.push('/');
+                        }
+                        return;
+                    }
+
+                    if (data.status === 'ended') {
+                        if (callStatus !== 'ended') {
+                             toast({ title: `Call ended`, variant: 'destructive'});
+                             cleanup();
+                             router.push('/');
+                        }
+                        return;
+                    }
+
+                    // This part ensures a call doc exists for instant meetings
                     if (!snapshot.exists()) {
                          const callDoc = await getDoc(callDocRef);
                          if (!callDoc.exists()) {
@@ -130,18 +152,6 @@ function CallRoom({ callId }: { callId: string }) {
                                 createdAt: serverTimestamp() 
                             });
                          }
-                    }
-
-                    const data = snapshot.data() as Call;
-                    setCallData(data);
-                    
-                    if (data.status === 'ended') {
-                        if (callStatus !== 'ended') {
-                             toast({ title: `Call ended`, variant: 'destructive'});
-                             cleanup();
-                             router.push('/');
-                        }
-                        return;
                     }
 
                     if (!peerRef.current && (data.status === 'ringing' || data.status === 'answered' || data.status === 'active')) {
