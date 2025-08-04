@@ -225,7 +225,7 @@ export default function ContactsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-2">
+                      <div className="opacity-100 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-2">
                         <Button variant="ghost" size="icon" asChild>
                            <Link href={`/chat/${contact.id}`}>
                                 <MessageSquare className="h-5 w-5 text-muted-foreground" />
