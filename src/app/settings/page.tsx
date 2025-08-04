@@ -64,6 +64,7 @@ export default function SettingsPage() {
             // 2. Update Auth profile
             if (auth.currentUser) {
                 await updateProfile(auth.currentUser, { photoURL: downloadURL });
+                await auth.currentUser.reload(); // Force refresh of user token
             }
             
             // 3. Update Firestore document
