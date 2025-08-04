@@ -19,11 +19,9 @@ interface VideoControlsProps {
 }
 
 export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle, onLeave, onToggleChat, isChatOpen }: VideoControlsProps) {
-  const router = useRouter();
   
   const handleLeave = () => {
     onLeave();
-    router.push('/');
   }
 
   const controls = [

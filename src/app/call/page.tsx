@@ -46,7 +46,7 @@ export default function CallPage() {
     const unsubscribes = useRef<(() => void)[]>([]);
 
 
-    const cleanup = useCallback(() => {
+    const cleanup = useCallback((shouldRedirect = true) => {
         if (peerRef.current) {
             peerRef.current.destroy();
             peerRef.current = null;
@@ -67,12 +67,12 @@ export default function CallPage() {
             setCallStatus('ended');
         }
 
-        if(router) {
+        if(router && shouldRedirect) {
             router.push('/');
         }
     }, [callStatus, router]);
 
-    const handleLeaveCall = useCallback(async () => {
+    const handleLeaveCall = useCallback(async (shouldRedirect = true) => {
         if (callId && user) {
              try {
                 const callDocRef = doc(db, 'calls', callId);
@@ -96,7 +96,7 @@ export default function CallPage() {
                 console.error("Error during call document cleanup: ", error);
             }
         }
-        cleanup();
+        cleanup(shouldRedirect);
     }, [callId, user, cleanup]);
 
     useEffect(() => {
@@ -147,7 +147,7 @@ export default function CallPage() {
             setCallStatus('connected');
         });
 
-        peer.on('close', cleanup);
+        peer.on('close', () => cleanup());
         peer.on('error', (err) => {
             console.error('Peer error:', err);
             toast({ title: 'Connection failed.', variant: 'destructive'});
@@ -224,6 +224,10 @@ export default function CallPage() {
             });
 
             const unsubscribe = onSnapshot(callDocRef, (snapshot) => {
+                 if (!snapshot.exists() && snapshot.metadata.hasPendingWrites === false) {
+                     if (isComponentMounted) cleanup();
+                     return;
+                }
                 const data = snapshot.data();
                 if (peerRef.current && !peerRef.current.destroyed && data?.answer && !answerApplied) {
                    try {
@@ -235,8 +239,6 @@ export default function CallPage() {
                    } catch(err) {
                      console.error("Error applying answer", err);
                    }
-                } else if (!snapshot.exists() && snapshot.metadata.hasPendingWrites === false) {
-                     if (isComponentMounted) cleanup();
                 }
             });
             unsubscribes.current.push(unsubscribe);
@@ -250,6 +252,12 @@ export default function CallPage() {
             const unsubscribeOffer = onSnapshot(callDocRef, async (callDocSnap) => {
                  if (!isComponentMounted || (peerRef.current && !peerRef.current.destroyed)) return;
                  
+                 if (!callDocSnap.exists() && callDocSnap.metadata.hasPendingWrites === false) {
+                     toast({ title: "Call not found or has been ended.", variant: "destructive" });
+                     if (isComponentMounted) cleanup();
+                     return;
+                 }
+
                  if (callDocSnap.exists() && callDocSnap.data()?.offer) {
                     unsubscribeOffer();
                     
@@ -268,16 +276,13 @@ export default function CallPage() {
 
                     try {
                         if (peer.signalingState !== 'stable') {
-                             await peer.signal(offer);
+                             peer.signal(offer);
                         }
                     } catch (err) {
                         console.error("Error signaling offer", err);
                     }
                     
                     setupPeerListeners(peer, callId, false);
-                 } else if (!callDocSnap.exists() && callDocSnap.metadata.hasPendingWrites === false) {
-                     toast({ title: "Call not found or has been ended.", variant: "destructive" });
-                     if (isComponentMounted) cleanup();
                  }
             }, (error) => {
                 console.error("Error listening for call offer: ", error);
@@ -299,7 +304,7 @@ export default function CallPage() {
 
         return () => {
              isComponentMounted = false;
-             handleLeaveCall();
+             handleLeaveCall(false);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, callId, isJoining]);
@@ -372,7 +377,7 @@ export default function CallPage() {
                         onCameraToggle={handleCameraToggle}
                         isMicOn={isMicOn}
                         onMicToggle={handleMicToggle}
-                        onLeave={handleLeaveCall}
+                        onLeave={() => handleLeaveCall(true)}
                         onToggleChat={() => setIsChatPanelOpen(!isChatPanelOpen)}
                         isChatOpen={isChatPanelOpen}
                     />
