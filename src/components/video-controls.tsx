@@ -5,16 +5,24 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { Mic, MicOff, Video, VideoOff, PhoneOff, ScreenShare, MessageSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface VideoControlsProps {
     isCameraOn: boolean;
     onCameraToggle: () => void;
     isMicOn: boolean;
     onMicToggle: () => void;
+    onLeave: () => void;
 }
 
-export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle }: VideoControlsProps) {
+export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle, onLeave }: VideoControlsProps) {
+  const router = useRouter();
+  
+  const handleLeave = () => {
+    onLeave();
+    router.push('/');
+  }
+
   const controls = [
     {
       label: isMicOn ? 'Mute' : 'Unmute',
@@ -31,12 +39,12 @@ export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle
     {
       label: 'Share screen',
       icon: <ScreenShare />,
-      onClick: () => {},
+      onClick: () => {}, // TODO: Implement screen sharing
     },
     {
       label: 'Show chat',
       icon: <MessageSquare />,
-      onClick: () => {},
+      onClick: () => {}, // This would likely toggle a state in the parent
     },
   ];
 
@@ -70,14 +78,13 @@ export function VideoControls({ isCameraOn, onCameraToggle, isMicOn, onMicToggle
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Link href="/" passHref>
               <Button
+                onClick={handleLeave}
                 size="icon"
                 className="w-16 h-14 rounded-full bg-red-600 hover:bg-red-700 text-white"
               >
                 <PhoneOff />
               </Button>
-            </Link>
           </TooltipTrigger>
           <TooltipContent side="top" className="bg-black/80 text-white border-none">
             <p>Leave call</p>

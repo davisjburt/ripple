@@ -49,7 +49,7 @@ export default function CallPage() {
             localStreamRef.current.getTracks().forEach(track => track.stop());
             localStreamRef.current = null;
         }
-        if (peerRef.current) {
+        if (peerRef.current && !peerRef.current.destroyed) {
             peerRef.current.destroy();
             peerRef.current = null;
         }
@@ -57,21 +57,23 @@ export default function CallPage() {
         if (localVideoRef.current) localVideoRef.current.srcObject = null;
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
 
-        setCallStatus('ended');
+        if (callStatus !== 'ended') {
+          setCallStatus('ended');
+        }
 
         // Optional: Clean up the call document in Firestore
         if (callId) {
              try {
                 // To prevent both users from deleting it, maybe only the initiator does.
                 const callDoc = await getDoc(doc(db, 'calls', callId));
-                if (callDoc.exists()) {
-                   // await deleteDoc(doc(db, 'calls', callId));
+                if (callDoc.exists() && !isJoining) {
+                   await deleteDoc(doc(db, 'calls', callId));
                 }
             } catch (error) {
                 console.error("Error during cleanup: ", error);
             }
         }
-    }, [callId]);
+    }, [callId, isJoining, callStatus]);
 
 
     const handleCameraToggle = () => {
@@ -97,12 +99,14 @@ export default function CallPage() {
     const setupPeerListeners = useCallback((peer: Peer.Instance, callDocId: string, isInitiating: boolean) => {
         const callerCandidates = collection(db, 'calls', callDocId, 'callerCandidates');
         const receiverCandidates = collection(db, 'calls', callDocId, 'receiverCandidates');
+        
+        const localCandidatesCollection = isInitiating ? callerCandidates : receiverCandidates;
+        const remoteCandidatesCollection = isInitiating ? receiverCandidates : callerCandidates;
 
         peer.on('signal', async (data) => {
             if(data.candidate) {
                 // Send candidate to the other peer
-                const candidatesCollection = isInitiating ? callerCandidates : receiverCandidates;
-                await addDoc(candidatesCollection, { candidate: JSON.stringify(data.candidate) });
+                await addDoc(localCandidatesCollection, { candidate: JSON.stringify(data.candidate) });
             }
         });
 
@@ -121,7 +125,6 @@ export default function CallPage() {
         });
 
         // Listen for remote ICE candidates
-        const remoteCandidatesCollection = isInitiating ? receiverCandidates : callerCandidates;
         const unsubscribeCandidates = onSnapshot(remoteCandidatesCollection, (snapshot) => {
             snapshot.docChanges().forEach(async (change) => {
                 if (change.type === 'added') {
@@ -141,9 +144,15 @@ export default function CallPage() {
     useEffect(() => {
         if (!user || !callId) return;
 
+        let isComponentMounted = true;
+
         const startMedia = async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                if (!isComponentMounted) {
+                    stream.getTracks().forEach(track => track.stop());
+                    return null;
+                };
                 localStreamRef.current = stream;
                 if (localVideoRef.current) {
                     localVideoRef.current.srcObject = stream;
@@ -152,12 +161,14 @@ export default function CallPage() {
                 return stream;
             } catch (err) {
                 console.error("Failed to get media", err);
-                setHasCameraPermission(false);
-                toast({
-                    title: "Camera/Mic access denied",
-                    description: "Please allow access to your camera and microphone.",
-                    variant: "destructive"
-                });
+                if (isComponentMounted) {
+                    setHasCameraPermission(false);
+                    toast({
+                        title: "Camera/Mic access denied",
+                        description: "Please allow access to your camera and microphone.",
+                        variant: "destructive"
+                    });
+                }
                 return null;
             }
         };
@@ -169,15 +180,19 @@ export default function CallPage() {
             const callDocRef = doc(db, 'calls', callId);
 
             peer.on('signal', async (offer) => {
+                // Only create the offer document if it's an offer type signal
                 if(offer.type === 'offer') {
                     await updateDoc(callDocRef, { offer: JSON.stringify(offer) });
                 }
             });
 
+            // Listen for the answer from the other peer
             const unsubscribe = onSnapshot(callDocRef, (snapshot) => {
                 const data = snapshot.data();
-                if (data?.answer) {
-                   peer.signal(JSON.parse(data.answer));
+                if (data?.answer && peerRef.current && !peerRef.current.destroyed && peerRef.current.signalingState !== 'stable') {
+                   peerRef.current.signal(JSON.parse(data.answer));
+                   // Once we have the answer, we don't need this listener anymore.
+                   unsubscribe();
                 }
             });
             unsubscribes.current.push(unsubscribe);
@@ -188,6 +203,8 @@ export default function CallPage() {
         const joinCall = async (stream: MediaStream) => {
             const callDocRef = doc(db, 'calls', callId);
             const callDocSnap = await getDoc(callDocRef);
+
+            if (!isComponentMounted) return;
 
             if (!callDocSnap.exists() || !callDocSnap.data()?.offer) {
                 toast({ title: "Call not found or invalid.", variant: "destructive" });
@@ -211,7 +228,7 @@ export default function CallPage() {
         };
 
         startMedia().then(stream => {
-            if(stream) {
+            if(stream && isComponentMounted) {
                 if(isJoining) {
                     joinCall(stream);
                 } else {
@@ -222,6 +239,7 @@ export default function CallPage() {
 
         // Cleanup on component unmount
         return () => {
+             isComponentMounted = false;
              cleanup();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -290,6 +308,7 @@ export default function CallPage() {
                         onCameraToggle={handleCameraToggle}
                         isMicOn={isMicOn}
                         onMicToggle={handleMicToggle}
+                        onLeave={cleanup}
                     />
                 </footer>
             </div>
