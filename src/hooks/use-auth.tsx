@@ -2,11 +2,16 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { onAuthStateChanged, User as FirebaseAuthUser } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { Spinner } from '@/components/ui/spinner';
 import { usePathname, useRouter } from 'next/navigation';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+
+// Combine Firebase Auth user with our custom Firestore user data
+type User = FirebaseAuthUser & {
+    // any custom fields from Firestore would go here
+};
 
 interface AuthContextType {
   user: User | null;
@@ -25,42 +30,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const pathname = usePathname();
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (authUser) => {
+    // This is the single, authoritative listener for auth state changes.
+    const unsubscribe = onAuthStateChanged(auth, (authUser) => {
       if (authUser) {
+        // User is signed in.
+        // Now, set up a real-time listener to their Firestore document.
         const userDocRef = doc(db, 'users', authUser.uid);
-        
-        // Use onSnapshot to listen for real-time updates to the user document
-        const unsubscribeFirestore = onSnapshot(userDocRef, async (userDocSnap) => {
-          if (!userDocSnap.exists()) {
-            // User exists in Auth but not in Firestore, let's sync them.
-            const photoURL = authUser.photoURL || `https://placehold.co/100x100/E9E9F0/333?text=${authUser.displayName?.charAt(0) || 'U'}`;
-            try {
-              await setDoc(userDocRef, {
-                uid: authUser.uid,
-                displayName: authUser.displayName,
-                email: authUser.email?.toLowerCase(),
-                photoURL: photoURL,
-              });
-            } catch (error) {
-              console.error("Error syncing user to Firestore:", error);
-            }
+
+        const unsubscribeFirestore = onSnapshot(userDocRef, async (userDoc) => {
+          if (userDoc.exists()) {
+            // Document exists, combine auth data with Firestore data
+            const firestoreData = userDoc.data();
+            setUser({
+              ...authUser,
+              ...firestoreData,
+            } as User);
           } else {
-             // User exists, merge authUser data with Firestore data
-             // This keeps the local user state in sync with both sources
-              const firestoreData = userDocSnap.data();
-              const combinedUser = {
-                ...authUser,
-                ...firestoreData, // Firestore data (like photoURL) overrides auth data if present
-              };
-              setUser(combinedUser as User);
+            // First sign-in, document doesn't exist yet. Create it.
+            const photoURL = authUser.photoURL || `https://placehold.co/100x100/E9E9F0/333?text=${authUser.displayName?.charAt(0) || 'U'}`;
+            const newUser = {
+              uid: authUser.uid,
+              displayName: authUser.displayName,
+              email: authUser.email?.toLowerCase(),
+              photoURL: photoURL,
+            };
+            await setDoc(userDocRef, newUser);
+            // The onSnapshot listener will fire again with the new data,
+            // so we don't need to call setUser here.
           }
+           setLoading(false);
         });
 
-        // Set initial user data while waiting for Firestore snapshot
-        setUser(authUser);
-        setLoading(false);
-        
-        return () => unsubscribeFirestore(); // Cleanup Firestore listener
+        // Return the firestore listener's cleanup function
+        return () => unsubscribeFirestore();
       } else {
         // User is signed out
         setUser(null);
@@ -68,7 +70,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     });
 
-    return () => unsubscribeAuth(); // Cleanup auth listener
+    // Return the auth listener's cleanup function
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {

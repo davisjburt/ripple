@@ -69,7 +69,6 @@ export default function SettingsPage() {
             
             // 4. Update UI immediately
             setNewImageFile(null);
-            setPreviewUrl(downloadURL); // Directly update the preview to the final URL
             
             toast({
                 title: 'Success',
