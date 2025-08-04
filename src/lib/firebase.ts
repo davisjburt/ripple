@@ -209,7 +209,8 @@ export const startCall = async (caller: User, receiver: User) => {
     const callDocRef = doc(collection(db, 'calls'));
     await setDoc(callDocRef, {
         createdAt: serverTimestamp(),
-        participants: [caller.uid, receiver.id]
+        participants: [caller.uid, receiver.id],
+        initiator: caller.uid,
     });
     
     // Create a separate invitation document for the receiver to listen to
@@ -226,7 +227,7 @@ export const startCall = async (caller: User, receiver: User) => {
         createdAt: serverTimestamp(),
     });
 
-    // We return the call document ID to the caller
+    // We return both IDs to the caller
     return { callId: callDocRef.id, invitationId: invitationRef.id };
 }
 
@@ -257,31 +258,50 @@ export const answerCall = async (invitationId: string) => {
     await updateDoc(invitationRef, { status: 'answered' });
 };
 
-// 4. Receiver or caller declines/ends the call
-export const declineCall = async (invitationId: string) => {
+// 4. Receiver or caller declines/ends a direct call
+export const declineOrEndCall = async (invitationId: string) => {
     try {
         const invitationRef = doc(db, 'callInvitations', invitationId);
         const invitationSnap = await getDoc(invitationRef);
         if(invitationSnap.exists()){
+            // Just update the status. The initiator is responsible for full cleanup.
+            await updateDoc(invitationRef, { status: 'declined' });
+        }
+    } catch (error) {
+        console.error("Error declining call: ", error);
+    }
+};
+
+// 5. Initiator leaves a direct call and cleans everything up
+export const leaveCall = async (invitationId: string) => {
+     try {
+        const invitationRef = doc(db, 'callInvitations', invitationId);
+        const invitationSnap = await getDoc(invitationRef);
+        if(invitationSnap.exists()){
             const callId = invitationSnap.data().callId;
-            // Clean up all related documents in a batch
             const batch = writeBatch(db);
             
-            // Delete the main call document
             if (callId) {
-                batch.delete(doc(db, 'calls', callId));
+                const callDocRef = doc(db, 'calls', callId);
+                const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
+                const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
+                const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
+                const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
+                callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                batch.delete(callDocRef);
             }
             
-            // Delete the invitation
             batch.delete(invitationRef);
 
             await batch.commit();
         }
     } catch (error) {
-        console.error("Error declining call: ", error);
-        // Don't re-throw, just log it.
+        console.error("Error leaving call and cleaning up: ", error);
     }
-};
+}
 
 
 export { app, auth, db, storage };
+
+    

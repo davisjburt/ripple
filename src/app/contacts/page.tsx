@@ -112,8 +112,8 @@ export default function ContactsPage() {
         }
         const caller = { uid: callerDoc.id, ...callerDoc.data() } as User;
       
-        const { callId } = await startCall(caller, contact);
-        router.push(`/call?id=${callId}&contactName=${encodeURIComponent(contact.displayName)}`);
+        const { callId, invitationId } = await startCall(caller, contact);
+        router.push(`/call?id=${callId}&invitationId=${invitationId}&contactName=${encodeURIComponent(contact.displayName)}`);
     } catch (error) {
       console.error("Failed to start call:", error);
       toast({
@@ -281,3 +281,5 @@ export default function ContactsPage() {
     </div>
   );
 }
+
+    

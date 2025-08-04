@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Spinner } from '@/components/ui/spinner';
-import { db } from '@/lib/firebase';
+import { db, leaveCall } from '@/lib/firebase';
 import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
 import Peer from 'simple-peer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -34,6 +34,7 @@ export default function CallPage() {
     const callId = searchParams.get('id');
     const contactName = searchParams.get('contactName');
     const isJoining = searchParams.get('join') === 'true';
+    const invitationId = searchParams.get('invitationId');
 
     const [callStatus, setCallStatus] = useState<'connecting' | 'connected' | 'ended'>('connecting');
     const [answerApplied, setAnswerApplied] = useState(false);
@@ -72,30 +73,34 @@ export default function CallPage() {
 
     const handleLeaveCall = useCallback(async (shouldRedirect = true) => {
         if (callId && user) {
-             try {
-                const callDocRef = doc(db, 'calls', callId);
-                const callDocSnap = await getDoc(callDocRef);
-                
-                if (callDocSnap.exists() && callDocSnap.data()?.initiator === user?.uid) {
-                   const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
-                   const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
-                   const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
-                   const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
-                   
-                   const batch = writeBatch(db);
-                   callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
-                   receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
-                   
-                   batch.delete(callDocRef);
-                   
-                   await batch.commit();
+            try {
+                // If it's a direct call (has an invitation), use the specific leaveCall function
+                if (invitationId) {
+                    await leaveCall(invitationId);
+                } else { // It's an instant meeting, just clean up the call document for the initiator
+                    const callDocRef = doc(db, 'calls', callId);
+                    const callDocSnap = await getDoc(callDocRef);
+                     if (callDocSnap.exists() && callDocSnap.data()?.initiator === user?.uid) {
+                       const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
+                       const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
+                       const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
+                       const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
+                       
+                       const batch = writeBatch(db);
+                       callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                       receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+                       
+                       batch.delete(callDocRef);
+                       
+                       await batch.commit();
+                    }
                 }
             } catch (error) {
                 console.error("Error during call document cleanup: ", error);
             }
         }
         cleanup(shouldRedirect);
-    }, [callId, user, cleanup]);
+    }, [callId, user, cleanup, invitationId]);
 
     const handleCameraToggle = () => {
         if (localStreamRef.current) {

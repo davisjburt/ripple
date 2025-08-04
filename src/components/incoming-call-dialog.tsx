@@ -11,7 +11,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from './ui/button';
 import { Phone, PhoneOff } from 'lucide-react';
-import { CallInvitation, answerCall, declineCall } from '@/lib/firebase';
+import { CallInvitation, answerCall, declineOrEndCall } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
@@ -28,8 +28,8 @@ export function IncomingCallDialog({ call, onClose }: IncomingCallDialogProps) {
     try {
       await answerCall(call.id);
       onClose();
-      // Navigate to the call page, passing the *call document id*
-      router.push(`/call?id=${call.callId}&contactName=${encodeURIComponent(call.caller.name)}&answered=true`);
+      // Navigate to the call page, passing the *call document id* and invitation id
+      router.push(`/call?id=${call.callId}&invitationId=${call.id}&contactName=${encodeURIComponent(call.caller.name)}&join=true`);
     } catch (error) {
       console.error('Failed to answer call:', error);
       toast({
@@ -42,7 +42,7 @@ export function IncomingCallDialog({ call, onClose }: IncomingCallDialogProps) {
 
   const handleDecline = async () => {
     try {
-      await declineCall(call.id);
+      await declineOrEndCall(call.id);
       onClose();
     } catch (error) {
       console.error('Failed to decline call:', error);
@@ -86,3 +86,5 @@ export function IncomingCallDialog({ call, onClose }: IncomingCallDialogProps) {
     </Dialog>
   );
 }
+
+    
