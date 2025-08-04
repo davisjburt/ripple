@@ -1,58 +1,61 @@
 
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // Users can read public profiles, but only write to their own.
+    // Users can read/write their own user document.
+    // They can only read other users' documents.
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow write: if request.auth.uid == userId;
-
-      // A user can only manage their own contacts list.
+      allow read, update, delete: if request.auth.uid == userId;
+      allow get: if request.auth != null;
+      
+      // A user can list their own contacts.
       match /contacts/{contactId} {
-        allow read, list, write, delete: if request.auth.uid == userId;
+        allow read: if request.auth.uid == userId;
       }
     }
 
-    // Friend requests can be created by any signed-in user.
-    // They can only be read or updated (accepted/declined) by the recipient.
+    // Friend requests can be created by any authenticated user.
+    // They can only be read or updated by the recipient.
     match /friendRequests/{requestId} {
-      allow create: if isSignedIn();
+      allow create: if request.auth != null;
       allow read, update: if request.auth.uid == resource.data.to;
     }
 
-    // A user can only read/write messages in chats they are a participant in.
+    // Chat documents can be read by participants.
+    // Messages can be read/written by participants.
     match /chats/{chatId} {
-      allow read, write: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow read, update: if request.auth.uid in resource.data.participants;
       
       match /messages/{messageId} {
-        allow read, create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow read, create: if request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      }
+    }
+
+    // Calls can be created by any authenticated user.
+    // They can only be read/updated/deleted by participants.
+    // Candidates can be read/written by participants.
+    match /calls/{callId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if request.auth.uid in resource.data.participants;
+      
+      match /callerCandidates/{candidateId} {
+        allow read, create, delete: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
+      }
+      match /receiverCandidates/{candidateId} {
+        allow read, create, delete: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
       }
     }
     
-    // Call invitations can be created by anyone.
-    // Only the receiver can read/update it.
+    // Call invitations can be created by any authenticated user.
+    // They can be read/updated by the receiver.
+    // The query for ringing invitations by the receiver is allowed.
     match /callInvitations/{invitationId} {
-        allow create: if isSignedIn();
-        allow read, update, delete: if request.auth.uid == resource.data.receiverId;
-    }
-
-    // Call documents are accessible only by participants.
-    match /calls/{callId} {
-      allow read, update, delete: if isSignedIn() && request.auth.uid in resource.data.participants;
-
-      // Signaling candidates can be created and read by participants.
-      match /callerCandidates/{candidateId} {
-        allow read, create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-      }
-      match /receiverCandidates/{candidateId} {
-        allow read, create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-      }
+       allow create: if request.auth != null;
+       allow read, update, delete: if request.auth.uid == resource.data.receiverId;
+       allow list: if request.auth.uid == request.query.where.receiverId 
+                    && request.query.where.status == 'ringing';
     }
   }
 }
