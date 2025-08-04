@@ -140,7 +140,9 @@ export default function CallPage() {
             snapshot.docChanges().forEach(async (change) => {
                 if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
                    try {
-                        await peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                        if (peerRef.current.signalingState !== 'stable') {
+                            await peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                        }
                    } catch(err) {
                         console.error("Error signaling candidate", err);
                    }
@@ -248,7 +250,9 @@ export default function CallPage() {
                     });
 
                     try {
-                        await peer.signal(offer);
+                        if (peer.signalingState !== 'stable') {
+                             await peer.signal(offer);
+                        }
                     } catch (err) {
                         console.error("Error signaling offer", err);
                     }
@@ -279,11 +283,9 @@ export default function CallPage() {
 
         return () => {
              isComponentMounted = false;
-             // Call cleanup directly here instead of handleLeaveCall
-             // to avoid dependency issues in useEffect. handleLeaveCall is for user actions.
-             cleanup();
+             handleLeaveCall();
         }
-    }, [user, callId, isJoining, cleanup, setupPeerListeners, toast, answerApplied]);
+    }, [user, callId, isJoining, toast, answerApplied, setupPeerListeners, cleanup, handleLeaveCall]);
     
 
     const callTitle = contactName ? `Call with ${contactName}` : `Call`;
@@ -360,3 +362,5 @@ export default function CallPage() {
         </div>
     );
 }
+
+    
