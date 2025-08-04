@@ -1,54 +1,11 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Users: Can read any profile, but only write to your own.
-    match /users/{userId} {
-      allow read: if request.auth != null;
-      allow update: if request.auth.uid == userId;
-
-      // Contacts: Can only manage your own contacts subcollection.
-      match /contacts/{contactId} {
-        allow read, write: if request.auth.uid == userId;
-      }
-    }
-
-    // Friend Requests: Can create, but only the receiver can see/accept/decline it.
-    match /friendRequests/{requestId} {
-      allow create: if request.auth != null;
-      allow read, update: if request.auth.uid == resource.data.to;
-    }
-
-    // Chats: Can only read/write documents where you are a participant.
-    match /chats/{chatId} {
-      allow read, write: if request.auth.uid in resource.data.participants;
-
-      // Messages: Can only read/write messages in chats you are a part of.
-      match /messages/{messageId} {
-        allow read, write: if get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
-      }
-    }
-
-    // Calls: Can create, but only participants can read/update the call state.
-    match /calls/{callId} {
-      allow create: if request.auth != null;
-      allow read, update, delete: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-
-      // ICE Candidates: Only call participants can add/read/delete candidates.
-      match /callerCandidates/{candidateId} {
-        allow read, write, delete: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-      }
-      match /receiverCandidates/{candidateId} {
-        allow read, write, delete: if request.auth.uid in get(/databases/$(database)/documents/calls/$(callId)).data.participants;
-      }
-    }
-
-    // Call Invitations: Can create, but only the receiver can see/update it.
-    match /callInvitations/{invitationId} {
-       allow create: if request.auth != null;
-       allow read, update, delete: if request.auth.uid == resource.data.receiverId || request.auth.uid == resource.data.caller.id;
+    // Allow read and write access to all documents for testing purposes.
+    // WARNING: This is insecure and should not be used in production.
+    match /{document=**} {
+      allow read, write: if true;
     }
   }
 }
