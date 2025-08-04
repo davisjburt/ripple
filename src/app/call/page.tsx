@@ -91,7 +91,10 @@ export default function CallPage() {
                     const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
                     receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
                     
-                    batch.delete(callDocRef);
+                    const callDocSnap = await getDoc(callDocRef);
+                    if(callDocSnap.exists()) {
+                        batch.delete(callDocRef);
+                    }
                     
                     await batch.commit();
                 }
@@ -406,3 +409,5 @@ export default function CallPage() {
         </div>
     );
 }
+
+    
