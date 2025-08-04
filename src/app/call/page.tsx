@@ -230,31 +230,41 @@ export default function CallPage() {
                     });
                     unsubscribes.current.push(unsubDoc);
                 } else { // Joining a call
-                    let callDocSnap = await getDoc(callDocRef);
-                    // Retry mechanism for joining
-                    if (!callDocSnap.exists() || !callDocSnap.data()?.offer) {
-                        await new Promise(resolve => setTimeout(resolve, 1500));
-                        callDocSnap = await getDoc(callDocRef);
-                    }
-                    
-                    if (!isComponentMounted || !callDocSnap.exists() || !callDocSnap.data()?.offer) {
-                        toast({ title: "Call not found or has been ended.", variant: "destructive" });
-                        cleanup();
-                        return;
-                    }
+                    const unsubCallDoc = onSnapshot(callDocRef, async (snapshot) => {
+                        if (!isComponentMounted) return;
+                        
+                        const data = snapshot.data();
+                        
+                        if (snapshot.exists() && data?.offer && peer) {
+                             unsubCallDoc(); // Unsubscribe after getting the offer
+                             
+                             try {
+                                peer.signal(JSON.parse(data.offer));
+                            } catch (err) {
+                                console.error("Error signaling offer", err);
+                            }
 
-                    const offer = JSON.parse(callDocSnap.data().offer);
-                    peer.on('signal', async (answer) => {
-                        if (answer.type === 'answer' && callStatus !== 'ended') {
-                           await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
+                            peer.on('signal', async (answer) => {
+                                if (answer.type === 'answer' && callStatus !== 'ended') {
+                                   await updateDoc(callDocRef, { answer: JSON.stringify(answer) });
+                                }
+                            });
                         }
                     });
 
-                    try {
-                        peer.signal(offer);
-                    } catch (err) {
-                        console.error("Error signaling offer", err);
-                    }
+                    // Timeout to prevent waiting forever
+                    const timeoutId = setTimeout(() => {
+                        if (isComponentMounted && callStatus === 'connecting') {
+                            unsubCallDoc();
+                            toast({ title: "Call not found or has timed out.", variant: "destructive" });
+                            cleanup();
+                        }
+                    }, 10000); // 10-second timeout
+
+                    unsubscribes.current.push(() => {
+                        unsubCallDoc();
+                        clearTimeout(timeoutId);
+                    });
                 }
             } catch (err) {
                 console.error("Failed to start call", err);
@@ -276,7 +286,7 @@ export default function CallPage() {
              handleLeaveCall(false);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user, callId]);
+    }, [user, callId, invitationId]);
     
     const handleInvite = () => {
         const inviteLink = `${window.location.origin}/call?id=${callId}&join=true`;
