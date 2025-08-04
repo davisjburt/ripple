@@ -50,7 +50,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <h1 className="text-2xl font-bold text-foreground">Ripple</h1>
           </div>
         </SidebarHeader>
-        <SidebarContent>
+        <SidebarContent className="pt-4">
           <SidebarNav />
         </SidebarContent>
         <SidebarFooter>{/* Can add elements here */}</SidebarFooter>
