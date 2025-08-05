@@ -2,8 +2,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, Copy, X } from 'lucide-react';
-import Link from 'next/link';
+import { ChevronLeft, Copy } from 'lucide-react';
 import { VideoControls } from '@/components/video-controls';
 import { ChatPanel } from '@/components/chat-panel';
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -11,13 +10,12 @@ import { useToast } from '@/hooks/use-toast';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Spinner } from '@/components/ui/spinner';
-import { db, leaveCall } from '@/lib/firebase';
-import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import Peer from 'simple-peer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useIsMobile } from '@/hooks/use-mobile';
-
+import Link from 'next/link';
 
 function CallRoom({ callId }: { callId: string }) {
     const { user } = useAuth();
@@ -25,62 +23,79 @@ function CallRoom({ callId }: { callId: string }) {
     const router = useRouter();
 
     const [isCameraOn, setIsCameraOn] = useState(true);
-    const [isMicOn, setIsMicOn] = useState(false);
+    const [isMicOn, setIsMicOn] = useState(true);
     const [hasCameraPermission, setHasCameraPermission] = useState(true);
     const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
-    const isMobile = useIsMobile();
-    
     const [remoteUserConnected, setRemoteUserConnected] = useState(false);
-    
+
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const peerRef = useRef<Peer.Instance | null>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
-    
     const unsubscribes = useRef<(() => void)[]>([]);
 
-    const cleanup = useCallback(() => {
+    const isInitiatorRef = useRef(false);
+
+    const cleanup = useCallback(async () => {
         console.log('Running cleanup...');
-        
-        unsubscribes.current.forEach(unsub => unsub());
-        unsubscribes.current = [];
+
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(track => track.stop());
+            localStreamRef.current = null;
+        }
 
         if (peerRef.current) {
             peerRef.current.destroy();
             peerRef.current = null;
         }
 
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => track.stop());
-            localStreamRef.current = null;
-        }
-        
+        unsubscribes.current.forEach(unsub => unsub());
+        unsubscribes.current = [];
+
         if (localVideoRef.current) localVideoRef.current.srcObject = null;
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-        
-        setRemoteUserConnected(false);
-        
-        const isInitiator = !new URLSearchParams(window.location.search).has('join');
-        if (isInitiator) {
-            leaveCall(callId);
+
+        if (isInitiatorRef.current) {
+            try {
+                const callRef = doc(db, 'calls', callId);
+                const callSnap = await getDoc(callRef);
+                if (callSnap.exists()) {
+                    const batch = writeBatch(db);
+                    const callerCandidatesQuery = collection(db, 'calls', callId, 'callerCandidates');
+                    const receiverCandidatesQuery = collection(db, 'calls', callId, 'receiverCandidates');
+
+                    const callerCandidatesSnap = await getDocs(callerCandidatesQuery);
+                    callerCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+
+                    const receiverCandidatesSnap = await getDocs(receiverCandidatesQuery);
+                    receiverCandidatesSnap.forEach(doc => batch.delete(doc.ref));
+
+                    batch.delete(callRef);
+                    await batch.commit();
+                }
+            } catch (error) {
+                console.error("Error cleaning up call document:", error);
+            }
         }
+    }, [callId]);
+
+    const handleLeaveCall = useCallback(async () => {
+        await cleanup();
         router.push('/');
-    }, [callId, router]);
+    }, [cleanup, router]);
 
-
-    const handleLeaveCall = useCallback(() => {
-        cleanup();
-    }, [cleanup]);
 
     useEffect(() => {
         if (!user || !callId) return;
 
-        let isComponentMounted = true;
+        let isMounted = true;
+        const isJoining = new URLSearchParams(window.location.search).has('join');
+        isInitiatorRef.current = !isJoining;
 
         const initializeCall = async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                if (!isComponentMounted) {
+                if (!isMounted) {
                     stream.getTracks().forEach(track => track.stop());
                     return;
                 }
@@ -92,79 +107,72 @@ function CallRoom({ callId }: { callId: string }) {
                 stream.getVideoTracks()[0].enabled = isCameraOn;
 
                 const callDocRef = doc(db, 'calls', callId);
-                const isJoining = new URLSearchParams(window.location.search).has('join');
-                const isInitiator = !isJoining;
-
-                const peer = new Peer({ initiator: isInitiator, trickle: true, stream });
-                peerRef.current = peer;
                 
+                if (isInitiatorRef.current) {
+                    await setDoc(callDocRef, {
+                        callerId: user.uid,
+                        createdAt: serverTimestamp(),
+                    });
+                }
+                
+                const peer = new Peer({
+                    initiator: isInitiatorRef.current,
+                    trickle: true,
+                    stream: stream,
+                });
+                peerRef.current = peer;
+
+                peer.on('signal', async (signalData) => {
+                    if (signalData.type === 'offer') {
+                        await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
+                    } else if (signalData.type === 'answer') {
+                        await updateDoc(callDocRef, { answer: JSON.stringify(signalData) });
+                    } else if (signalData.candidate) {
+                        const candidatesCollection = collection(db, 'calls', callId, isInitiatorRef.current ? 'callerCandidates' : 'receiverCandidates');
+                        await addDoc(candidatesCollection, { candidate: JSON.stringify(signalData.candidate) });
+                    }
+                });
+
                 peer.on('stream', (remoteStream) => {
-                    console.log('Received remote stream');
                     if (remoteVideoRef.current) {
                         remoteVideoRef.current.srcObject = remoteStream;
                     }
                     setRemoteUserConnected(true);
                 });
-
-                peer.on('signal', async (signalData) => {
-                    if (!isComponentMounted || !peerRef.current || peerRef.current.destroyed) return;
-                    if (signalData.type === 'offer') {
-                         await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
-                    } else if (signalData.type === 'answer') {
-                        await updateDoc(callDocRef, { answer: JSON.stringify(signalData) });
-                    } else if (signalData.candidate) {
-                        const candidatesCollection = collection(db, 'calls', callId, isInitiator ? 'callerCandidates' : 'receiverCandidates');
-                        await addDoc(candidatesCollection, { candidate: JSON.stringify(signalData.candidate) });
-                    }
-                });
                 
                 peer.on('close', () => {
-                    console.log('Peer connection closed.');
-                    if(isComponentMounted) handleLeaveCall();
+                    if(isMounted) handleLeaveCall();
                 });
                 
                 peer.on('error', (err) => {
                     console.error('Peer error:', err);
-                    if(isComponentMounted) {
+                    if(isMounted) {
                         toast({ title: 'Connection error.', variant: 'destructive'});
                         handleLeaveCall();
                     }
                 });
-                
-                if (isInitiator) {
-                    await setDoc(callDocRef, {
-                        type: 'instant',
-                        caller: { id: user.uid, name: user.displayName || 'User', photoURL: user.photoURL || '' },
-                        createdAt: serverTimestamp()
-                    });
-                    console.log('Initiator created call document.');
-                }
-                
-                // Firestore Listeners
-                const unsubCallDoc = onSnapshot(callDocRef, (snapshot) => {
-                    if (!isComponentMounted) return;
 
+                const unsubCallDoc = onSnapshot(callDocRef, (snapshot) => {
                     if (!snapshot.exists()) {
-                        console.log('Call document does not exist.');
-                        toast({ title: 'Call has ended.', variant: 'destructive' });
-                        if (isComponentMounted) handleLeaveCall();
+                        if (isMounted) {
+                            toast({ title: 'Call has ended.', variant: 'destructive' });
+                            handleLeaveCall();
+                        }
                         return;
                     }
-
+                    
                     const data = snapshot.data();
                     if (peerRef.current && !peerRef.current.destroyed) {
-                         if (isInitiator && data.answer && !peerRef.current.remoteAddress) {
-                            console.log('Initiator received answer.');
+                         if (isInitiatorRef.current && data.answer && !peerRef.current.remoteAddress) {
                             peerRef.current.signal(JSON.parse(data.answer));
-                        } else if (!isInitiator && data.offer && !peerRef.current.remoteAddress) {
-                            console.log('Joiner received offer.');
+                        } else if (!isInitiatorRef.current && data.offer && !peerRef.current.remoteAddress) {
                             peerRef.current.signal(JSON.parse(data.offer));
                         }
                     }
                 });
                 unsubscribes.current.push(unsubCallDoc);
 
-                const remoteCandidatesCollection = collection(db, 'calls', callId, isInitiator ? 'receiverCandidates' : 'callerCandidates');
+                const remoteCandidatesCollection = collection(db, 'calls', callId, isInitiatorRef.current ? 'receiverCandidates' : 'callerCandidates');
                 const unsubscribeCandidates = onSnapshot(remoteCandidatesCollection, (snapshot) => {
                     snapshot.docChanges().forEach(async (change) => {
                         if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
@@ -181,7 +189,7 @@ function CallRoom({ callId }: { callId: string }) {
 
             } catch (err) {
                 console.error("Failed to start call", err);
-                if (isComponentMounted) {
+                if (isMounted) {
                     setHasCameraPermission(false);
                     toast({
                         title: "Could not start call",
@@ -196,18 +204,18 @@ function CallRoom({ callId }: { callId: string }) {
 
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
             e.preventDefault();
-            e.returnValue = ''; // Required for chrome
+            e.returnValue = ''; 
             handleLeaveCall();
         }
 
         window.addEventListener('beforeunload', handleBeforeUnload);
 
         return () => {
-             isComponentMounted = false;
+             isMounted = false;
              window.removeEventListener('beforeunload', handleBeforeUnload);
              cleanup();
         }
-    }, [user, callId, cleanup, handleLeaveCall, isMicOn, isCameraOn, toast, router]);
+    }, [user, callId, isMicOn, isCameraOn, toast, router, cleanup, handleLeaveCall]);
 
     const handleInvite = () => {
         const inviteLink = `${window.location.origin}/call?id=${callId}&join=true`;
@@ -261,10 +269,12 @@ function CallRoom({ callId }: { callId: string }) {
                             </p>
                         </div>
                     </div>
-                    <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30" onClick={handleInvite}>
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copy Invite Link
-                    </Button>
+                    {isInitiatorRef.current && (
+                        <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30" onClick={handleInvite}>
+                            <Copy className="mr-2 h-4 w-4" />
+                            Copy Invite Link
+                        </Button>
+                    )}
                 </header>
 
                 {/* Main Video Grid */}
@@ -274,7 +284,7 @@ function CallRoom({ callId }: { callId: string }) {
                         {!remoteUserConnected && (
                             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/80">
                                 <Spinner size="large" />
-                                <p className="text-muted-foreground">Waiting for user...</p>
+                                <p className="text-muted-foreground">Waiting for user to join...</p>
                             </div>
                         )}
                      </div>
@@ -318,17 +328,6 @@ function CallRoom({ callId }: { callId: string }) {
             {/* Chat Panel */}
             <AnimatePresence>
                  {isChatPanelOpen && (
-                    <>
-                    {/* Backdrop for mobile */}
-                    {isMobile && (
-                         <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setIsChatPanelOpen(false)}
-                            className="absolute inset-0 bg-black/50 z-30 md:hidden"
-                        />
-                    )}
                     <motion.aside
                         initial={{ x: '100%' }}
                         animate={{ x: 0 }}
@@ -336,15 +335,8 @@ function CallRoom({ callId }: { callId: string }) {
                         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                         className="w-full max-w-sm bg-gray-900/80 backdrop-blur-xl border-l border-white/10 h-full flex flex-col absolute right-0 top-0 z-40 md:relative md:w-96"
                     >
-                         <div className="p-4 border-b border-white/10 flex items-center justify-between md:hidden">
-                            <h3 className="font-semibold">Meeting Chat</h3>
-                            <Button variant="ghost" size="icon" onClick={() => setIsChatPanelOpen(false)}>
-                                <X className="h-5 w-5"/>
-                            </Button>
-                         </div>
-                        <ChatPanel sessionId={callId || 'no-session'} />
+                        <ChatPanel sessionId={callId} />
                     </motion.aside>
-                    </>
                  )}
             </AnimatePresence>
         </div>
@@ -374,5 +366,3 @@ export default function CallPage() {
 
     return <CallRoom callId={callId} />;
 }
-
-    
