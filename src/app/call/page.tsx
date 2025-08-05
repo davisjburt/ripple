@@ -116,7 +116,8 @@ function CallRoom({ callId }: { callId: string }) {
                 const unsubCallDoc = onSnapshot(callDocRef, async (snapshot) => {
                      if (!isComponentMounted || callStatus === 'ended') return;
 
-                    if (!snapshot.exists()) {
+                    const callDoc = await getDoc(callDocRef);
+                    if (!callDoc.exists()) {
                          // This is an instant meeting, create the doc if we are the initiator
                         const isJoining = new URLSearchParams(window.location.search).has('join');
                         if (!isJoining) {
@@ -136,21 +137,17 @@ function CallRoom({ callId }: { callId: string }) {
                         return;
                     }
                     
-                    const data = snapshot.data() as Call;
+                    const data = callDoc.data() as Call;
                     setCallData(data);
                     
                     if (!peerRef.current && localStreamRef.current) {
                          const isInitiator = data.caller.id === user.uid;
-                         // For direct calls, the receiver waits for an offer.
-                        if (data.type === 'direct' && !isInitiator && !data.offer) {
-                            return;
-                        }
-
+                        
                         const peer = new Peer({ initiator: isInitiator, trickle: true, stream: localStreamRef.current });
                         peerRef.current = peer;
                         
                         peer.on('signal', async (signalData) => {
-                            if (callStatus === 'ended') return;
+                            if (callStatus === 'ended' || !isComponentMounted) return;
                             if (signalData.type === 'offer') {
                                 await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
                             } else if (signalData.type === 'answer') {
@@ -246,7 +243,7 @@ function CallRoom({ callId }: { callId: string }) {
     const callTitle = callData?.type === 'direct' 
         ? `Call with ${user?.uid === callData.caller.id ? callData.receiver?.name : callData.caller.name}` 
         : `Instant Meeting`;
-    const isInstantMeeting = callData?.type === 'instant';
+    const isInstantMeeting = callData?.type === 'instant' || !callData?.type; // Handle new instant meetings
     const remoteUserConnected = callStatus === 'connected' || callData?.status === 'answered';
 
 
