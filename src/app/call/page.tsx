@@ -60,7 +60,6 @@ function CallRoom({ callId }: { callId: string }) {
         
         setRemoteUserConnected(false);
         
-        // This check prevents a joiner from deleting the call doc
         const isInitiator = !new URLSearchParams(window.location.search).has('join');
         if (isInitiator) {
             await leaveCall(callId);
@@ -96,11 +95,29 @@ function CallRoom({ callId }: { callId: string }) {
                 const isJoining = new URLSearchParams(window.location.search).has('join');
                 const isInitiator = !isJoining;
 
+                if (isInitiator) {
+                    const callDocSnap = await getDoc(callDocRef);
+                    if (!callDocSnap.exists()) {
+                        await setDoc(callDocRef, {
+                            type: 'instant',
+                            caller: { id: user.uid, name: user.displayName || 'User', photoURL: user.photoURL || '' },
+                            createdAt: serverTimestamp()
+                        });
+                    }
+                }
+                
                 const peer = new Peer({ initiator: isInitiator, trickle: true, stream });
                 peerRef.current = peer;
+                
+                peer.on('stream', (remoteStream) => {
+                    if (remoteVideoRef.current) {
+                        remoteVideoRef.current.srcObject = remoteStream;
+                    }
+                    setRemoteUserConnected(true);
+                });
 
                 peer.on('signal', async (signalData) => {
-                    if (!isComponentMounted) return;
+                    if (!isComponentMounted || !peerRef.current || peerRef.current.destroyed) return;
                     if (signalData.type === 'offer') {
                          await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
                     } else if (signalData.type === 'answer') {
@@ -109,13 +126,6 @@ function CallRoom({ callId }: { callId: string }) {
                         const candidatesCollection = collection(db, 'calls', callId, isInitiator ? 'callerCandidates' : 'receiverCandidates');
                         await addDoc(candidatesCollection, { candidate: JSON.stringify(signalData.candidate) });
                     }
-                });
-
-                peer.on('stream', (remoteStream) => {
-                    if (remoteVideoRef.current) {
-                        remoteVideoRef.current.srcObject = remoteStream;
-                    }
-                    setRemoteUserConnected(true);
                 });
                 
                 peer.on('close', () => {
@@ -135,8 +145,10 @@ function CallRoom({ callId }: { callId: string }) {
                     if (!isComponentMounted) return;
 
                     if (!snapshot.exists()) {
-                        toast({ title: 'Call has ended.', variant: 'destructive' });
-                        handleLeaveCall();
+                        if (isComponentMounted) {
+                            toast({ title: 'Call has ended.', variant: 'destructive' });
+                            handleLeaveCall();
+                        }
                         return;
                     }
 
@@ -165,18 +177,6 @@ function CallRoom({ callId }: { callId: string }) {
                     });
                 });
                 unsubscribes.current.push(unsubscribeCandidates);
-
-                // Initiator creates the call document
-                if (isInitiator) {
-                    const callDocSnap = await getDoc(callDocRef);
-                    if (!callDocSnap.exists()) {
-                        await setDoc(callDocRef, {
-                            type: 'instant',
-                            caller: { id: user.uid, name: user.displayName || 'User', photoURL: user.photoURL || '' },
-                            createdAt: serverTimestamp()
-                        });
-                    }
-                }
 
             } catch (err) {
                 console.error("Failed to start call", err);
@@ -374,3 +374,5 @@ export default function CallPage() {
 
     return <CallRoom callId={callId} />;
 }
+
+    
