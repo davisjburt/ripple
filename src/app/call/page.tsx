@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Spinner } from '@/components/ui/spinner';
-import { db, leaveCall, Call } from '@/lib/firebase';
+import { db, leaveCall } from '@/lib/firebase';
 import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import Peer from 'simple-peer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -39,7 +39,7 @@ function CallRoom({ callId }: { callId: string }) {
     
     const unsubscribes = useRef<(() => void)[]>([]);
 
-    const cleanup = useCallback(async (shouldRedirect = true) => {
+    const cleanup = useCallback(async () => {
         console.log('Running cleanup...');
         
         unsubscribes.current.forEach(unsub => unsub());
@@ -59,19 +59,18 @@ function CallRoom({ callId }: { callId: string }) {
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
         
         setRemoteUserConnected(false);
-
-        if (shouldRedirect) {
-            // Only the initiator should delete the document to avoid race conditions
-            const isInitiator = !new URLSearchParams(window.location.search).has('join');
-            if (isInitiator) {
-                await leaveCall(callId);
-            }
-            router.push('/');
+        
+        // This check prevents a joiner from deleting the call doc
+        const isInitiator = !new URLSearchParams(window.location.search).has('join');
+        if (isInitiator) {
+            await leaveCall(callId);
         }
+        router.push('/');
     }, [callId, router]);
 
+
     const handleLeaveCall = useCallback(() => {
-        cleanup(true);
+        cleanup();
     }, [cleanup]);
 
     useEffect(() => {
@@ -81,7 +80,6 @@ function CallRoom({ callId }: { callId: string }) {
 
         const initializeCall = async () => {
             try {
-                // 1. Get user media
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 if (!isComponentMounted) {
                     stream.getTracks().forEach(track => track.stop());
@@ -94,20 +92,17 @@ function CallRoom({ callId }: { callId: string }) {
                 stream.getAudioTracks()[0].enabled = isMicOn;
                 stream.getVideoTracks()[0].enabled = isCameraOn;
 
-                // --- Call Initialization ---
                 const callDocRef = doc(db, 'calls', callId);
                 const isJoining = new URLSearchParams(window.location.search).has('join');
                 const isInitiator = !isJoining;
 
-                // Setup peer connection
                 const peer = new Peer({ initiator: isInitiator, trickle: true, stream });
                 peerRef.current = peer;
 
-                // --- Event Handlers for Peer ---
                 peer.on('signal', async (signalData) => {
                     if (!isComponentMounted) return;
                     if (signalData.type === 'offer') {
-                        await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
+                         await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
                     } else if (signalData.type === 'answer') {
                         await updateDoc(callDocRef, { answer: JSON.stringify(signalData) });
                     } else if (signalData.candidate) {
@@ -135,8 +130,7 @@ function CallRoom({ callId }: { callId: string }) {
                     }
                 });
 
-
-                // --- Firestore Listeners ---
+                // Firestore Listeners
                 const unsubCallDoc = onSnapshot(callDocRef, (snapshot) => {
                     if (!isComponentMounted) return;
 
@@ -148,7 +142,7 @@ function CallRoom({ callId }: { callId: string }) {
 
                     const data = snapshot.data();
                     if (peerRef.current && !peerRef.current.destroyed) {
-                        if (isInitiator && data.answer && !peerRef.current.remoteAddress) {
+                         if (isInitiator && data.answer && !peerRef.current.remoteAddress) {
                             peerRef.current.signal(JSON.parse(data.answer));
                         } else if (!isInitiator && data.offer && !peerRef.current.remoteAddress) {
                             peerRef.current.signal(JSON.parse(data.offer));
@@ -157,14 +151,12 @@ function CallRoom({ callId }: { callId: string }) {
                 });
                 unsubscribes.current.push(unsubCallDoc);
 
-
                 const remoteCandidatesCollection = collection(db, 'calls', callId, isInitiator ? 'receiverCandidates' : 'callerCandidates');
                 const unsubscribeCandidates = onSnapshot(remoteCandidatesCollection, (snapshot) => {
                     snapshot.docChanges().forEach(async (change) => {
                         if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
                             try {
                                 peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
-                                // Safe deletion after signaling
                                 await deleteDoc(change.doc.ref);
                             } catch (err) {
                                 console.error("Error signaling candidate", err);
@@ -174,14 +166,13 @@ function CallRoom({ callId }: { callId: string }) {
                 });
                 unsubscribes.current.push(unsubscribeCandidates);
 
-
-                // --- Initiator specific logic ---
+                // Initiator creates the call document
                 if (isInitiator) {
-                    const callDoc = await getDoc(callDocRef);
-                    if (!callDoc.exists()) {
-                         await setDoc(callDocRef, {
+                    const callDocSnap = await getDoc(callDocRef);
+                    if (!callDocSnap.exists()) {
+                        await setDoc(callDocRef, {
                             type: 'instant',
-                            caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
+                            caller: { id: user.uid, name: user.displayName || 'User', photoURL: user.photoURL || '' },
                             createdAt: serverTimestamp()
                         });
                     }
@@ -213,7 +204,7 @@ function CallRoom({ callId }: { callId: string }) {
         return () => {
              isComponentMounted = false;
              window.removeEventListener('beforeunload', handleBeforeUnload);
-             cleanup(false);
+             cleanup();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, callId]);
