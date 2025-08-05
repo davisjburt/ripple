@@ -39,7 +39,7 @@ function CallRoom({ callId }: { callId: string }) {
     
     const unsubscribes = useRef<(() => void)[]>([]);
 
-    const cleanup = useCallback(async () => {
+    const cleanup = useCallback(() => {
         console.log('Running cleanup...');
         
         unsubscribes.current.forEach(unsub => unsub());
@@ -62,7 +62,7 @@ function CallRoom({ callId }: { callId: string }) {
         
         const isInitiator = !new URLSearchParams(window.location.search).has('join');
         if (isInitiator) {
-            await leaveCall(callId);
+            leaveCall(callId);
         }
         router.push('/');
     }, [callId, router]);
@@ -84,7 +84,7 @@ function CallRoom({ callId }: { callId: string }) {
                     stream.getTracks().forEach(track => track.stop());
                     return;
                 }
-
+                
                 localStreamRef.current = stream;
                 if (localVideoRef.current) localVideoRef.current.srcObject = stream;
                 setHasCameraPermission(true);
@@ -95,21 +95,11 @@ function CallRoom({ callId }: { callId: string }) {
                 const isJoining = new URLSearchParams(window.location.search).has('join');
                 const isInitiator = !isJoining;
 
-                if (isInitiator) {
-                    const callDocSnap = await getDoc(callDocRef);
-                    if (!callDocSnap.exists()) {
-                        await setDoc(callDocRef, {
-                            type: 'instant',
-                            caller: { id: user.uid, name: user.displayName || 'User', photoURL: user.photoURL || '' },
-                            createdAt: serverTimestamp()
-                        });
-                    }
-                }
-                
                 const peer = new Peer({ initiator: isInitiator, trickle: true, stream });
                 peerRef.current = peer;
                 
                 peer.on('stream', (remoteStream) => {
+                    console.log('Received remote stream');
                     if (remoteVideoRef.current) {
                         remoteVideoRef.current.srcObject = remoteStream;
                     }
@@ -129,6 +119,7 @@ function CallRoom({ callId }: { callId: string }) {
                 });
                 
                 peer.on('close', () => {
+                    console.log('Peer connection closed.');
                     if(isComponentMounted) handleLeaveCall();
                 });
                 
@@ -139,24 +130,34 @@ function CallRoom({ callId }: { callId: string }) {
                         handleLeaveCall();
                     }
                 });
-
+                
+                if (isInitiator) {
+                    await setDoc(callDocRef, {
+                        type: 'instant',
+                        caller: { id: user.uid, name: user.displayName || 'User', photoURL: user.photoURL || '' },
+                        createdAt: serverTimestamp()
+                    });
+                    console.log('Initiator created call document.');
+                }
+                
                 // Firestore Listeners
                 const unsubCallDoc = onSnapshot(callDocRef, (snapshot) => {
                     if (!isComponentMounted) return;
 
                     if (!snapshot.exists()) {
-                        if (isComponentMounted) {
-                            toast({ title: 'Call has ended.', variant: 'destructive' });
-                            handleLeaveCall();
-                        }
+                        console.log('Call document does not exist.');
+                        toast({ title: 'Call has ended.', variant: 'destructive' });
+                        if (isComponentMounted) handleLeaveCall();
                         return;
                     }
 
                     const data = snapshot.data();
                     if (peerRef.current && !peerRef.current.destroyed) {
                          if (isInitiator && data.answer && !peerRef.current.remoteAddress) {
+                            console.log('Initiator received answer.');
                             peerRef.current.signal(JSON.parse(data.answer));
                         } else if (!isInitiator && data.offer && !peerRef.current.remoteAddress) {
+                            console.log('Joiner received offer.');
                             peerRef.current.signal(JSON.parse(data.offer));
                         }
                     }
@@ -206,8 +207,7 @@ function CallRoom({ callId }: { callId: string }) {
              window.removeEventListener('beforeunload', handleBeforeUnload);
              cleanup();
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user, callId]);
+    }, [user, callId, cleanup, handleLeaveCall, isMicOn, isCameraOn, toast, router]);
 
     const handleInvite = () => {
         const inviteLink = `${window.location.origin}/call?id=${callId}&join=true`;
