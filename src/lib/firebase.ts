@@ -52,18 +52,12 @@ export interface ChatRoom {
 
 export interface Call {
     id: string;
-    type: 'direct' | 'instant';
+    type: 'instant';
     caller: {
         id: string;
         name: string;
         photoURL: string;
     };
-    receiver?: {
-        id: string;
-        name: string;
-        photoURL: string;
-    };
-    status?: 'ringing' | 'answered' | 'declined' | 'missed' | 'active' | 'ended';
     createdAt: any;
     offer?: any;
     answer?: any;

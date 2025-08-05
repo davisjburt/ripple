@@ -39,8 +39,9 @@ function CallRoom({ callId }: { callId: string }) {
     
     const unsubscribes = useRef<(() => void)[]>([]);
 
-    const cleanup = useCallback(() => {
+    const cleanup = useCallback(async (shouldRedirect = true) => {
         console.log('Running cleanup...');
+        
         unsubscribes.current.forEach(unsub => unsub());
         unsubscribes.current = [];
 
@@ -58,23 +59,26 @@ function CallRoom({ callId }: { callId: string }) {
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
         
         setRemoteUserConnected(false);
-    }, []);
 
-    const handleLeaveCall = useCallback(async (shouldRedirect = true) => {
-        if (callId) {
-            await leaveCall(callId);
-        }
-        cleanup();
-        if(shouldRedirect) {
+        if (shouldRedirect) {
+            // Only the initiator should delete the document to avoid race conditions
+            const isInitiator = !new URLSearchParams(window.location.search).has('join');
+            if (isInitiator) {
+                await leaveCall(callId);
+            }
             router.push('/');
         }
-    }, [callId, cleanup, router]);
+    }, [callId, router]);
+
+    const handleLeaveCall = useCallback(() => {
+        cleanup(true);
+    }, [cleanup]);
 
     useEffect(() => {
         if (!user || !callId) return;
 
         let isComponentMounted = true;
-        
+
         const initializeCall = async () => {
             try {
                 // 1. Get user media
@@ -90,93 +94,89 @@ function CallRoom({ callId }: { callId: string }) {
                 stream.getAudioTracks()[0].enabled = isMicOn;
                 stream.getVideoTracks()[0].enabled = isCameraOn;
 
+                // --- Call Initialization ---
                 const callDocRef = doc(db, 'calls', callId);
                 const isJoining = new URLSearchParams(window.location.search).has('join');
+                const isInitiator = !isJoining;
+
+                // Setup peer connection
+                const peer = new Peer({ initiator: isInitiator, trickle: true, stream });
+                peerRef.current = peer;
+
+                // --- Event Handlers for Peer ---
+                peer.on('signal', async (signalData) => {
+                    if (!isComponentMounted) return;
+                    if (signalData.type === 'offer') {
+                        await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
+                    } else if (signalData.type === 'answer') {
+                        await updateDoc(callDocRef, { answer: JSON.stringify(signalData) });
+                    } else if (signalData.candidate) {
+                        const candidatesCollection = collection(db, 'calls', callId, isInitiator ? 'callerCandidates' : 'receiverCandidates');
+                        await addDoc(candidatesCollection, { candidate: JSON.stringify(signalData.candidate) });
+                    }
+                });
+
+                peer.on('stream', (remoteStream) => {
+                    if (remoteVideoRef.current) {
+                        remoteVideoRef.current.srcObject = remoteStream;
+                    }
+                    setRemoteUserConnected(true);
+                });
                 
-                // 2. Set up Firestore listener
-                const unsubCallDoc = onSnapshot(callDocRef, async (snapshot) => {
+                peer.on('close', () => {
+                    if(isComponentMounted) handleLeaveCall();
+                });
+                
+                peer.on('error', (err) => {
+                    console.error('Peer error:', err);
+                    if(isComponentMounted) {
+                        toast({ title: 'Connection error.', variant: 'destructive'});
+                        handleLeaveCall();
+                    }
+                });
+
+
+                // --- Firestore Listeners ---
+                const unsubCallDoc = onSnapshot(callDocRef, (snapshot) => {
                     if (!isComponentMounted) return;
 
-                    // If doc is deleted, end the call
                     if (!snapshot.exists()) {
-                        if (remoteUserConnected) { // only show toast if we were connected
-                            toast({ title: 'Call has ended.', variant: 'destructive' });
-                        }
-                        handleLeaveCall(true);
+                        toast({ title: 'Call has ended.', variant: 'destructive' });
+                        handleLeaveCall();
                         return;
                     }
-                    
-                    const data = snapshot.data() as Call;
 
-                    // 3. Create peer connection if it doesn't exist
-                    if (!peerRef.current && localStreamRef.current) {
-                        const isInitiator = !isJoining;
-                        
-                        const peer = new Peer({ initiator: isInitiator, trickle: true, stream: localStreamRef.current });
-                        peerRef.current = peer;
-
-                        peer.on('stream', (remoteStream) => {
-                             if (remoteVideoRef.current) {
-                                remoteVideoRef.current.srcObject = remoteStream;
-                            }
-                            setRemoteUserConnected(true);
-                        });
-                        
-                        peer.on('signal', async (signalData) => {
-                             if (!isComponentMounted || (await getDoc(callDocRef)).exists() === false) return;
-
-                            if (signalData.type === 'offer') {
-                                await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
-                            } else if (signalData.type === 'answer') {
-                                await updateDoc(callDocRef, { answer: JSON.stringify(signalData) });
-                            } else if (signalData.candidate) {
-                                const candidatesCollection = collection(db, 'calls', callId, isInitiator ? 'callerCandidates' : 'receiverCandidates');
-                                await addDoc(candidatesCollection, { candidate: JSON.stringify(signalData.candidate) });
-                            }
-                        });
-
-                        peer.on('close', () => handleLeaveCall(true));
-                        peer.on('error', (err) => {
-                            console.error('Peer error:', err);
-                            toast({ title: 'Connection failed.', variant: 'destructive'});
-                            handleLeaveCall(true);
-                        });
-
-                        const listenForCandidates = (isInitiator: boolean) => {
-                            const remoteCandidatesCollection = collection(db, 'calls', callId, isInitiator ? 'receiverCandidates' : 'callerCandidates');
-                            const unsubscribeCandidates = onSnapshot(remoteCandidatesCollection, (snapshot) => {
-                                snapshot.docChanges().forEach(async (change) => {
-                                    if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
-                                        try {
-                                            peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
-                                            // Safe deletion after signaling
-                                            await deleteDoc(change.doc.ref);
-                                        } catch(err) {
-                                            console.error("Error signaling candidate", err);
-                                        }
-                                    }
-                                });
-                            });
-                            unsubscribes.current.push(unsubscribeCandidates);
-                        }
-                        listenForCandidates(isInitiator);
-                    }
-                    
-                    // 4. Signal peer with offer/answer
+                    const data = snapshot.data();
                     if (peerRef.current && !peerRef.current.destroyed) {
-                        const isInitiator = !isJoining;
-                        if (!isInitiator && data.offer && !peerRef.current.remoteAddress) {
-                            peerRef.current.signal(JSON.parse(data.offer));
-                        }
                         if (isInitiator && data.answer && !peerRef.current.remoteAddress) {
                             peerRef.current.signal(JSON.parse(data.answer));
+                        } else if (!isInitiator && data.offer && !peerRef.current.remoteAddress) {
+                            peerRef.current.signal(JSON.parse(data.offer));
                         }
                     }
                 });
                 unsubscribes.current.push(unsubCallDoc);
-                
-                // 5. Create call document if we are the initiator
-                if (!isJoining) {
+
+
+                const remoteCandidatesCollection = collection(db, 'calls', callId, isInitiator ? 'receiverCandidates' : 'callerCandidates');
+                const unsubscribeCandidates = onSnapshot(remoteCandidatesCollection, (snapshot) => {
+                    snapshot.docChanges().forEach(async (change) => {
+                        if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
+                            try {
+                                peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                                // Safe deletion after signaling
+                                await deleteDoc(change.doc.ref);
+                            } catch (err) {
+                                console.error("Error signaling candidate", err);
+                            }
+                        }
+                    });
+                });
+                unsubscribes.current.push(unsubscribeCandidates);
+
+
+                // --- Initiator specific logic ---
+                if (isInitiator) {
                     const callDoc = await getDoc(callDocRef);
                     if (!callDoc.exists()) {
                          await setDoc(callDocRef, {
@@ -202,10 +202,20 @@ function CallRoom({ callId }: { callId: string }) {
 
         initializeCall();
 
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = ''; // Required for chrome
+            handleLeaveCall();
+        }
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
         return () => {
              isComponentMounted = false;
-             handleLeaveCall(false);
+             window.removeEventListener('beforeunload', handleBeforeUnload);
+             cleanup(false);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, callId]);
 
     const handleInvite = () => {
@@ -250,10 +260,8 @@ function CallRoom({ callId }: { callId: string }) {
                 {/* Header */}
                 <header className="absolute top-0 left-0 right-0 z-20 p-4 flex justify-between items-center bg-gradient-to-b from-black/70 to-transparent">
                     <div className="flex items-center gap-4">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                            <Link href="/">
-                                <ChevronLeft />
-                            </Link>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => router.push('/')}>
+                            <ChevronLeft />
                         </Button>
                         <div>
                             <h2 className="font-semibold">Instant Meeting</h2>
@@ -309,7 +317,7 @@ function CallRoom({ callId }: { callId: string }) {
                         onCameraToggle={handleCameraToggle}
                         isMicOn={isMicOn}
                         onMicToggle={handleMicToggle}
-                        onLeave={() => handleLeaveCall(true)}
+                        onLeave={handleLeaveCall}
                         onToggleChat={() => setIsChatPanelOpen(!isChatPanelOpen)}
                         isChatOpen={isChatPanelOpen}
                     />
