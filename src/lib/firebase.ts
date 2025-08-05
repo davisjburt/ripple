@@ -218,64 +218,6 @@ export const getChatRooms = (userId: string, callback: (rooms: ChatRoom[]) => vo
 };
 
 // --- Call Signaling Functions ---
-
-export const startCall = async (caller: User, receiver: User) => {
-    const callDocRef = doc(collection(db, 'calls'));
-    await setDoc(callDocRef, {
-        type: 'direct',
-        caller: {
-            id: caller.uid,
-            name: caller.displayName,
-            photoURL: caller.photoURL,
-        },
-        receiver: {
-            id: receiver.id,
-            name: receiver.displayName,
-            photoURL: receiver.photoURL
-        },
-        status: 'ringing',
-        createdAt: serverTimestamp(),
-    });
-
-    return callDocRef.id;
-}
-
-
-export const onIncomingCall = (userId: string, callback: (call: Call | null) => void) => {
-    const q = query(
-        collection(db, 'calls'),
-        where('receiver.id', '==', userId),
-        where('status', '==', 'ringing'),
-        orderBy('createdAt', 'desc'),
-        limit(1)
-    );
-
-    return onSnapshot(q, (snapshot) => {
-        if (snapshot.empty) {
-            callback(null);
-            return;
-        }
-        const call = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Call;
-        callback(call);
-    }, (error) => {
-        console.error("Error listening for incoming calls:", error);
-        callback(null);
-    });
-};
-
-export const answerCall = async (callId: string) => {
-    const callRef = doc(db, 'calls', callId);
-    await updateDoc(callRef, { status: 'answered' });
-};
-
-export const declineOrEndCall = async (callId: string) => {
-    const callRef = doc(db, 'calls', callId);
-    const callSnap = await getDoc(callRef);
-    if (callSnap.exists()) {
-        await updateDoc(callRef, { status: 'ended' });
-    }
-};
-
 export const leaveCall = async (callId: string) => {
      try {
         const callRef = doc(db, 'calls', callId);
@@ -299,7 +241,7 @@ export const leaveCall = async (callId: string) => {
         }
     } catch (error) {
         // This can happen if the other user hangs up first. It's safe to ignore.
-        console.error("Error leaving call and cleaning up: ", error);
+        console.log("Error leaving call and cleaning up (this may be safe to ignore): ", error);
     }
 }
 

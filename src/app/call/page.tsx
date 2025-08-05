@@ -30,8 +30,7 @@ function CallRoom({ callId }: { callId: string }) {
     const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
     const isMobile = useIsMobile();
     
-    const [callData, setCallData] = useState<Call | null>(null);
-    const [callStatus, setCallStatus] = useState<'connecting' | 'connected' | 'ended'>('connecting');
+    const [remoteUserConnected, setRemoteUserConnected] = useState(false);
     
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -42,6 +41,9 @@ function CallRoom({ callId }: { callId: string }) {
 
     const cleanup = useCallback(() => {
         console.log('Running cleanup...');
+        unsubscribes.current.forEach(unsub => unsub());
+        unsubscribes.current = [];
+
         if (peerRef.current) {
             peerRef.current.destroy();
             peerRef.current = null;
@@ -54,14 +56,9 @@ function CallRoom({ callId }: { callId: string }) {
         
         if (localVideoRef.current) localVideoRef.current.srcObject = null;
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-
-        unsubscribes.current.forEach(unsub => unsub());
-        unsubscribes.current = [];
         
-        if (callStatus !== 'ended') {
-            setCallStatus('ended');
-        }
-    }, [callStatus]);
+        setRemoteUserConnected(false);
+    }, []);
 
     const handleLeaveCall = useCallback(async (shouldRedirect = true) => {
         if (callId) {
@@ -73,27 +70,6 @@ function CallRoom({ callId }: { callId: string }) {
         }
     }, [callId, cleanup, router]);
 
-
-    const handleCameraToggle = () => {
-        if (localStreamRef.current) {
-            const videoTrack = localStreamRef.current.getVideoTracks()[0];
-            if (videoTrack) {
-                videoTrack.enabled = !isCameraOn;
-                setIsCameraOn(!isCameraOn);
-            }
-        }
-    };
-
-    const handleMicToggle = () => {
-        if (localStreamRef.current) {
-            const audioTrack = localStreamRef.current.getAudioTracks()[0];
-            if (audioTrack) {
-                audioTrack.enabled = !isMicOn;
-                setIsMicOn(!isMicOn);
-            }
-        }
-    };
-
     useEffect(() => {
         if (!user || !callId) return;
 
@@ -101,6 +77,7 @@ function CallRoom({ callId }: { callId: string }) {
         
         const initializeCall = async () => {
             try {
+                // 1. Get user media
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 if (!isComponentMounted) {
                     stream.getTracks().forEach(track => track.stop());
@@ -114,54 +91,44 @@ function CallRoom({ callId }: { callId: string }) {
                 stream.getVideoTracks()[0].enabled = isCameraOn;
 
                 const callDocRef = doc(db, 'calls', callId);
+                const isJoining = new URLSearchParams(window.location.search).has('join');
                 
+                // 2. Set up Firestore listener
                 const unsubCallDoc = onSnapshot(callDocRef, async (snapshot) => {
-                    if (!isComponentMounted || callStatus === 'ended') return;
+                    if (!isComponentMounted) return;
 
+                    // If doc is deleted, end the call
                     if (!snapshot.exists()) {
-                        const isJoining = new URLSearchParams(window.location.search).has('join');
-                        if (!isJoining) {
-                             await setDoc(callDocRef, {
-                                type: 'instant',
-                                caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
-                                status: 'active',
-                                createdAt: serverTimestamp()
-                            });
-                        } else {
-                            if (callStatus !== 'ended') {
-                                toast({ title: 'Call has ended.', variant: 'destructive' });
-                                cleanup();
-                                router.push('/');
-                            }
+                        if (remoteUserConnected) { // only show toast if we were connected
+                            toast({ title: 'Call has ended.', variant: 'destructive' });
                         }
+                        handleLeaveCall(true);
                         return;
                     }
                     
                     const data = snapshot.data() as Call;
-                    setCallData(data);
-                    
+
+                    // 3. Create peer connection if it doesn't exist
                     if (!peerRef.current && localStreamRef.current) {
-                        const isInitiator = data.caller.id === user.uid;
+                        const isInitiator = !isJoining;
                         
                         const peer = new Peer({ initiator: isInitiator, trickle: true, stream: localStreamRef.current });
                         peerRef.current = peer;
 
                         peer.on('stream', (remoteStream) => {
-                            if (remoteVideoRef.current) {
+                             if (remoteVideoRef.current) {
                                 remoteVideoRef.current.srcObject = remoteStream;
                             }
-                            setCallStatus('connected');
+                            setRemoteUserConnected(true);
                         });
                         
                         peer.on('signal', async (signalData) => {
-                            if (callStatus === 'ended' || !isComponentMounted) return;
-                            const callDoc = await getDoc(callDocRef);
-                            if (!callDoc.exists()) return; // Don't signal if call doc is gone
+                             if (!isComponentMounted || (await getDoc(callDocRef)).exists() === false) return;
 
                             if (signalData.type === 'offer') {
                                 await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
                             } else if (signalData.type === 'answer') {
-                                await updateDoc(callDocRef, { answer: JSON.stringify(signalData), status: 'answered' });
+                                await updateDoc(callDocRef, { answer: JSON.stringify(signalData) });
                             } else if (signalData.candidate) {
                                 const candidatesCollection = collection(db, 'calls', callId, isInitiator ? 'callerCandidates' : 'receiverCandidates');
                                 await addDoc(candidatesCollection, { candidate: JSON.stringify(signalData.candidate) });
@@ -182,6 +149,7 @@ function CallRoom({ callId }: { callId: string }) {
                                     if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
                                         try {
                                             peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                                            // Safe deletion after signaling
                                             await deleteDoc(change.doc.ref);
                                         } catch(err) {
                                             console.error("Error signaling candidate", err);
@@ -193,9 +161,10 @@ function CallRoom({ callId }: { callId: string }) {
                         }
                         listenForCandidates(isInitiator);
                     }
-
+                    
+                    // 4. Signal peer with offer/answer
                     if (peerRef.current && !peerRef.current.destroyed) {
-                        const isInitiator = data.caller.id === user.uid;
+                        const isInitiator = !isJoining;
                         if (!isInitiator && data.offer && !peerRef.current.remoteAddress) {
                             peerRef.current.signal(JSON.parse(data.offer));
                         }
@@ -205,6 +174,18 @@ function CallRoom({ callId }: { callId: string }) {
                     }
                 });
                 unsubscribes.current.push(unsubCallDoc);
+                
+                // 5. Create call document if we are the initiator
+                if (!isJoining) {
+                    const callDoc = await getDoc(callDocRef);
+                    if (!callDoc.exists()) {
+                         await setDoc(callDocRef, {
+                            type: 'instant',
+                            caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
+                            createdAt: serverTimestamp()
+                        });
+                    }
+                }
 
             } catch (err) {
                 console.error("Failed to start call", err);
@@ -243,12 +224,25 @@ function CallRoom({ callId }: { callId: string }) {
         });
     };
 
-    const callTitle = callData?.type === 'direct' 
-        ? `Call with ${user?.uid === callData.caller.id ? callData.receiver?.name : callData.caller.name}` 
-        : `Instant Meeting`;
-    const isInstantMeeting = callData?.type === 'instant' || !callData?.type; // Handle new instant meetings
-    const remoteUserConnected = callStatus === 'connected';
+    const handleCameraToggle = () => {
+        if (localStreamRef.current) {
+            const videoTrack = localStreamRef.current.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.enabled = !isCameraOn;
+                setIsCameraOn(!isCameraOn);
+            }
+        }
+    };
 
+    const handleMicToggle = () => {
+        if (localStreamRef.current) {
+            const audioTrack = localStreamRef.current.getAudioTracks()[0];
+            if (audioTrack) {
+                audioTrack.enabled = !isMicOn;
+                setIsMicOn(!isMicOn);
+            }
+        }
+    };
 
     return (
         <div className="flex h-screen max-h-screen bg-black text-white overflow-hidden">
@@ -262,23 +256,16 @@ function CallRoom({ callId }: { callId: string }) {
                             </Link>
                         </Button>
                         <div>
-                            <h2 className="font-semibold">{callTitle}</h2>
-                            <p className="text-xs text-muted-foreground">
-                                Status: <span className="capitalize">{remoteUserConnected ? 'Connected' : (callStatus === 'ended' ? 'Ended' : 'Connecting...')}</span>
+                            <h2 className="font-semibold">Instant Meeting</h2>
+                             <p className="text-xs text-muted-foreground mt-1">
+                                Session ID: {callId}
                             </p>
-                            {isInstantMeeting && (
-                                <p className="text-xs text-muted-foreground mt-1">
-                                    Session ID: {callId}
-                                </p>
-                            )}
                         </div>
                     </div>
-                    {isInstantMeeting && (
-                        <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30" onClick={handleInvite}>
-                            <Copy className="mr-2 h-4 w-4" />
-                            Copy Invite Link
-                        </Button>
-                    )}
+                    <Button variant="outline" className="bg-transparent hover:bg-white/10 hover:text-white border-white/30" onClick={handleInvite}>
+                        <Copy className="mr-2 h-4 w-4" />
+                        Copy Invite Link
+                    </Button>
                 </header>
 
                 {/* Main Video Grid */}
@@ -288,7 +275,7 @@ function CallRoom({ callId }: { callId: string }) {
                         {!remoteUserConnected && (
                             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/80">
                                 <Spinner size="large" />
-                                <p className="text-muted-foreground">{callStatus === 'ended' ? 'Call Ended' : 'Waiting for user...'}</p>
+                                <p className="text-muted-foreground">Waiting for user...</p>
                             </div>
                         )}
                      </div>
@@ -388,5 +375,3 @@ export default function CallPage() {
 
     return <CallRoom callId={callId} />;
 }
-
-    
