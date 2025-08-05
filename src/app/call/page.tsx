@@ -106,13 +106,6 @@ function CallRoom({ callId }: { callId: string }) {
                 const callSnap = await getDoc(callDocRef);
                 
                 isInitiatorRef.current = !callSnap.exists();
-
-                if (isInitiatorRef.current) {
-                    await setDoc(callDocRef, {
-                        callerId: user.uid,
-                        createdAt: serverTimestamp(),
-                    });
-                }
                 
                 const peer = new Peer({
                     initiator: isInitiatorRef.current,
@@ -120,6 +113,13 @@ function CallRoom({ callId }: { callId: string }) {
                     stream: stream,
                 });
                 peerRef.current = peer;
+
+                if (isInitiatorRef.current) {
+                     await setDoc(callDocRef, {
+                        callerId: user.uid,
+                        createdAt: serverTimestamp(),
+                    });
+                }
                 
                 peer.on('signal', async (signalData) => {
                     if (signalData.type === 'offer') {
