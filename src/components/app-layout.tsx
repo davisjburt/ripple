@@ -15,7 +15,7 @@ import { UserNav } from '@/components/user-nav';
 import { PanelLeft, Video } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
-import { Call, onIncomingCall } from '@/lib/firebase';
+import { Call } from '@/lib/firebase';
 import { IncomingCallDialog } from './incoming-call-dialog';
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -29,15 +29,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       setDefaultOpen(savedState[1] === 'true');
     }
   }, []);
-
-  useEffect(() => {
-    if (user) {
-      const unsubscribe = onIncomingCall(user.uid, (call) => {
-        setIncomingCall(call);
-      });
-      return () => unsubscribe();
-    }
-  }, [user]);
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>

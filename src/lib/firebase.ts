@@ -63,7 +63,7 @@ export interface Call {
         name: string;
         photoURL: string;
     };
-    status: 'ringing' | 'answered' | 'declined' | 'missed' | 'active' | 'ended';
+    status?: 'ringing' | 'answered' | 'declined' | 'missed' | 'active' | 'ended';
     createdAt: any;
     offer?: any;
     answer?: any;
