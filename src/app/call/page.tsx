@@ -58,8 +58,10 @@ function CallRoom({ callId }: { callId: string }) {
         unsubscribes.current.forEach(unsub => unsub());
         unsubscribes.current = [];
         
-        setCallStatus('ended');
-    }, []);
+        if (callStatus !== 'ended') {
+            setCallStatus('ended');
+        }
+    }, [callStatus]);
 
     const handleLeaveCall = useCallback(async (shouldRedirect = true) => {
         if (callId) {
@@ -114,14 +116,12 @@ function CallRoom({ callId }: { callId: string }) {
                 const callDocRef = doc(db, 'calls', callId);
                 
                 const unsubCallDoc = onSnapshot(callDocRef, async (snapshot) => {
-                     if (!isComponentMounted || callStatus === 'ended') return;
+                    if (!isComponentMounted || callStatus === 'ended') return;
 
-                    const callDoc = await getDoc(callDocRef);
-                    if (!callDoc.exists()) {
-                         // This is an instant meeting, create the doc if we are the initiator
+                    if (!snapshot.exists()) {
                         const isJoining = new URLSearchParams(window.location.search).has('join');
                         if (!isJoining) {
-                            await setDoc(callDocRef, {
+                             await setDoc(callDocRef, {
                                 type: 'instant',
                                 caller: { id: user.uid, name: user.displayName, photoURL: user.photoURL },
                                 status: 'active',
@@ -137,17 +137,27 @@ function CallRoom({ callId }: { callId: string }) {
                         return;
                     }
                     
-                    const data = callDoc.data() as Call;
+                    const data = snapshot.data() as Call;
                     setCallData(data);
                     
                     if (!peerRef.current && localStreamRef.current) {
-                         const isInitiator = data.caller.id === user.uid;
+                        const isInitiator = data.caller.id === user.uid;
                         
                         const peer = new Peer({ initiator: isInitiator, trickle: true, stream: localStreamRef.current });
                         peerRef.current = peer;
+
+                        peer.on('stream', (remoteStream) => {
+                            if (remoteVideoRef.current) {
+                                remoteVideoRef.current.srcObject = remoteStream;
+                            }
+                            setCallStatus('connected');
+                        });
                         
                         peer.on('signal', async (signalData) => {
                             if (callStatus === 'ended' || !isComponentMounted) return;
+                            const callDoc = await getDoc(callDocRef);
+                            if (!callDoc.exists()) return; // Don't signal if call doc is gone
+
                             if (signalData.type === 'offer') {
                                 await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
                             } else if (signalData.type === 'answer') {
@@ -158,13 +168,6 @@ function CallRoom({ callId }: { callId: string }) {
                             }
                         });
 
-                        peer.on('stream', (remoteStream) => {
-                            if (remoteVideoRef.current) {
-                                remoteVideoRef.current.srcObject = remoteStream;
-                            }
-                            setCallStatus('connected');
-                        });
-                        
                         peer.on('close', () => handleLeaveCall(true));
                         peer.on('error', (err) => {
                             console.error('Peer error:', err);
@@ -244,7 +247,7 @@ function CallRoom({ callId }: { callId: string }) {
         ? `Call with ${user?.uid === callData.caller.id ? callData.receiver?.name : callData.caller.name}` 
         : `Instant Meeting`;
     const isInstantMeeting = callData?.type === 'instant' || !callData?.type; // Handle new instant meetings
-    const remoteUserConnected = callStatus === 'connected' || callData?.status === 'answered';
+    const remoteUserConnected = callStatus === 'connected';
 
 
     return (
