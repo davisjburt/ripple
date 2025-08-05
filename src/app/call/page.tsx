@@ -89,9 +89,7 @@ function CallRoom({ callId }: { callId: string }) {
         if (!user || !callId) return;
 
         let isMounted = true;
-        const isJoining = new URLSearchParams(window.location.search).has('join');
-        isInitiatorRef.current = !isJoining;
-
+        
         const initializeCall = async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -103,18 +101,12 @@ function CallRoom({ callId }: { callId: string }) {
                 localStreamRef.current = stream;
                 if (localVideoRef.current) localVideoRef.current.srcObject = stream;
                 setHasCameraPermission(true);
-                stream.getAudioTracks()[0].enabled = isMicOn;
-                stream.getVideoTracks()[0].enabled = isCameraOn;
-
+               
                 const callDocRef = doc(db, 'calls', callId);
+                const callSnap = await getDoc(callDocRef);
                 
-                if (isInitiatorRef.current) {
-                    await setDoc(callDocRef, {
-                        callerId: user.uid,
-                        createdAt: serverTimestamp(),
-                    });
-                }
-                
+                isInitiatorRef.current = !callSnap.exists();
+
                 const peer = new Peer({
                     initiator: isInitiatorRef.current,
                     trickle: true,
@@ -122,6 +114,13 @@ function CallRoom({ callId }: { callId: string }) {
                 });
                 peerRef.current = peer;
 
+                if (isInitiatorRef.current) {
+                    await setDoc(callDocRef, {
+                        callerId: user.uid,
+                        createdAt: serverTimestamp(),
+                    });
+                }
+                
                 peer.on('signal', async (signalData) => {
                     if (signalData.type === 'offer') {
                         await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
@@ -215,7 +214,7 @@ function CallRoom({ callId }: { callId: string }) {
              window.removeEventListener('beforeunload', handleBeforeUnload);
              cleanup();
         }
-    }, [user, callId, isMicOn, isCameraOn, toast, router, cleanup, handleLeaveCall]);
+    }, [user, callId, toast, router, cleanup, handleLeaveCall]);
 
     const handleInvite = () => {
         const inviteLink = `${window.location.origin}/call?id=${callId}&join=true`;
@@ -234,22 +233,18 @@ function CallRoom({ callId }: { callId: string }) {
     };
 
     const handleCameraToggle = () => {
-        if (localStreamRef.current) {
+        if (localStreamRef.current && localStreamRef.current.getVideoTracks().length > 0) {
             const videoTrack = localStreamRef.current.getVideoTracks()[0];
-            if (videoTrack) {
-                videoTrack.enabled = !isCameraOn;
-                setIsCameraOn(!isCameraOn);
-            }
+            videoTrack.enabled = !isCameraOn;
+            setIsCameraOn(!isCameraOn);
         }
     };
 
     const handleMicToggle = () => {
-        if (localStreamRef.current) {
+        if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
             const audioTrack = localStreamRef.current.getAudioTracks()[0];
-            if (audioTrack) {
-                audioTrack.enabled = !isMicOn;
-                setIsMicOn(!isMicOn);
-            }
+            audioTrack.enabled = !isMicOn;
+            setIsMicOn(!isMicOn);
         }
     };
 
@@ -366,3 +361,5 @@ export default function CallPage() {
 
     return <CallRoom callId={callId} />;
 }
+
+    
