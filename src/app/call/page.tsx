@@ -11,7 +11,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Spinner } from '@/components/ui/spinner';
 import { db } from '@/lib/firebase';
-import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, addDoc, deleteDoc, writeBatch, serverTimestamp, getDocs } from 'firebase/firestore';
 import Peer from 'simple-peer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AnimatePresence, motion } from 'framer-motion';
