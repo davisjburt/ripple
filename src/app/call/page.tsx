@@ -107,19 +107,19 @@ function CallRoom({ callId }: { callId: string }) {
                 
                 isInitiatorRef.current = !callSnap.exists();
 
-                const peer = new Peer({
-                    initiator: isInitiatorRef.current,
-                    trickle: true,
-                    stream: stream,
-                });
-                peerRef.current = peer;
-
                 if (isInitiatorRef.current) {
                     await setDoc(callDocRef, {
                         callerId: user.uid,
                         createdAt: serverTimestamp(),
                     });
                 }
+                
+                const peer = new Peer({
+                    initiator: isInitiatorRef.current,
+                    trickle: true,
+                    stream: stream,
+                });
+                peerRef.current = peer;
                 
                 peer.on('signal', async (signalData) => {
                     if (signalData.type === 'offer') {
@@ -204,7 +204,7 @@ function CallRoom({ callId }: { callId: string }) {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
             e.preventDefault();
             e.returnValue = ''; 
-            handleLeaveCall();
+            cleanup();
         }
 
         window.addEventListener('beforeunload', handleBeforeUnload);
@@ -361,5 +361,3 @@ export default function CallPage() {
 
     return <CallRoom callId={callId} />;
 }
-
-    
