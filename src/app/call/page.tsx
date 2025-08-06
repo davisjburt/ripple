@@ -107,6 +107,13 @@ function CallRoom({ callId }: { callId: string }) {
                 
                 isInitiatorRef.current = !callSnap.exists();
                 
+                if (isInitiatorRef.current) {
+                    await setDoc(callDocRef, {
+                        callerId: user.uid,
+                        createdAt: serverTimestamp(),
+                    });
+                }
+                
                 const peer = new Peer({
                     initiator: isInitiatorRef.current,
                     trickle: true,
@@ -114,13 +121,6 @@ function CallRoom({ callId }: { callId: string }) {
                 });
                 peerRef.current = peer;
 
-                if (isInitiatorRef.current) {
-                     await setDoc(callDocRef, {
-                        callerId: user.uid,
-                        createdAt: serverTimestamp(),
-                    });
-                }
-                
                 peer.on('signal', async (signalData) => {
                     if (signalData.type === 'offer') {
                         await updateDoc(callDocRef, { offer: JSON.stringify(signalData) });
@@ -162,9 +162,9 @@ function CallRoom({ callId }: { callId: string }) {
                     
                     const data = snapshot.data();
                     if (peerRef.current && !peerRef.current.destroyed) {
-                         if (isInitiatorRef.current && data.answer && !peerRef.current.remoteAddress) {
+                         if (data.answer && isInitiatorRef.current && !peerRef.current.remoteAddress) {
                             peerRef.current.signal(JSON.parse(data.answer));
-                        } else if (!isInitiatorRef.current && data.offer && !peerRef.current.remoteAddress) {
+                        } else if (data.offer && !isInitiatorRef.current && !peerRef.current.remoteAddress) {
                             peerRef.current.signal(JSON.parse(data.offer));
                         }
                     }
@@ -176,7 +176,7 @@ function CallRoom({ callId }: { callId: string }) {
                     snapshot.docChanges().forEach(async (change) => {
                         if (change.type === 'added' && peerRef.current && !peerRef.current.destroyed) {
                             try {
-                                peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
+                                await peerRef.current.signal({ candidate: JSON.parse(change.doc.data().candidate) });
                                 await deleteDoc(change.doc.ref);
                             } catch (err) {
                                 console.error("Error signaling candidate", err);
