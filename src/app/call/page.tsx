@@ -23,7 +23,7 @@ function CallRoom({ callId }: { callId: string }) {
     const router = useRouter();
 
     const [isCameraOn, setIsCameraOn] = useState(true);
-    const [isMicOn, setIsMicOn] = useState(true);
+    const [isMicOn, setIsMicOn] = useState(false);
     const [hasCameraPermission, setHasCameraPermission] = useState(true);
     const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
     const [remoteUserConnected, setRemoteUserConnected] = useState(false);
@@ -98,6 +98,9 @@ function CallRoom({ callId }: { callId: string }) {
                     return;
                 }
                 
+                // Mute microphone by default
+                stream.getAudioTracks().forEach(track => track.enabled = false);
+
                 localStreamRef.current = stream;
                 if (localVideoRef.current) localVideoRef.current.srcObject = stream;
                 setHasCameraPermission(true);
