@@ -35,6 +35,7 @@ function CallRoom({ callId }: { callId: string }) {
     const unsubscribes = useRef<(() => void)[]>([]);
 
     const isInitiatorRef = useRef(false);
+    const hasConnected = useRef(false);
 
     const cleanup = useCallback(async () => {
         console.log('Running cleanup...');
@@ -110,6 +111,13 @@ function CallRoom({ callId }: { callId: string }) {
                 
                 isInitiatorRef.current = !callSnap.exists();
                 
+                 if (isInitiatorRef.current) {
+                    await setDoc(callDocRef, {
+                        callerId: user.uid,
+                        createdAt: serverTimestamp(),
+                    });
+                }
+                
                 const peer = new Peer({
                     initiator: isInitiatorRef.current,
                     trickle: true,
@@ -117,12 +125,6 @@ function CallRoom({ callId }: { callId: string }) {
                 });
                 peerRef.current = peer;
 
-                if (isInitiatorRef.current) {
-                    await setDoc(callDocRef, {
-                        callerId: user.uid,
-                        createdAt: serverTimestamp(),
-                    });
-                }
 
                 peer.on('signal', async (signalData) => {
                     if (signalData.type === 'offer') {
@@ -164,11 +166,13 @@ function CallRoom({ callId }: { callId: string }) {
                     }
                     
                     const data = snapshot.data();
-                    if (peerRef.current && !peerRef.current.destroyed) {
-                         if (data?.answer && isInitiatorRef.current && peerRef.current.signalingState !== 'stable') {
+                     if (peerRef.current && !peerRef.current.destroyed && !hasConnected.current) {
+                         if (data?.answer && isInitiatorRef.current) {
                             peerRef.current.signal(JSON.parse(data.answer));
-                        } else if (data?.offer && !isInitiatorRef.current && peerRef.current.signalingState !== 'stable') {
+                            hasConnected.current = true;
+                        } else if (data?.offer && !isInitiatorRef.current) {
                             peerRef.current.signal(JSON.parse(data.offer));
+                            hasConnected.current = true;
                         }
                     }
                 });
