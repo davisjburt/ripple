@@ -165,9 +165,9 @@ function CallRoom({ callId }: { callId: string }) {
                     
                     const data = snapshot.data();
                     if (peerRef.current && !peerRef.current.destroyed) {
-                         if (data.answer && isInitiatorRef.current && !peerRef.current.remoteAddress) {
+                         if (data.answer && isInitiatorRef.current && peerRef.current.signalingState !== 'stable') {
                             peerRef.current.signal(JSON.parse(data.answer));
-                        } else if (data.offer && !isInitiatorRef.current && !peerRef.current.remoteAddress) {
+                        } else if (data.offer && !isInitiatorRef.current && peerRef.current.signalingState !== 'stable') {
                             peerRef.current.signal(JSON.parse(data.offer));
                         }
                     }
