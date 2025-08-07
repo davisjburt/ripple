@@ -121,7 +121,6 @@ function CallRoom({ callId }: { callId: string }) {
                     initiator: isInitiatorRef.current,
                     trickle: true,
                     stream: stream,
-                    sdpTransform: sdp => sdp // Prevents InvalidStateError on redundant signals
                 });
                 peerRef.current = peer;
 
@@ -365,5 +364,3 @@ export default function CallPage() {
 
     return <CallRoom callId={callId} />;
 }
-
-    
