@@ -121,6 +121,7 @@ function CallRoom({ callId }: { callId: string }) {
                     initiator: isInitiatorRef.current,
                     trickle: true,
                     stream: stream,
+                    sdpTransform: sdp => sdp // Prevents InvalidStateError on redundant signals
                 });
                 peerRef.current = peer;
 
@@ -155,7 +156,7 @@ function CallRoom({ callId }: { callId: string }) {
                 });
 
                 const unsubCallDoc = onSnapshot(callDocRef, (snapshot) => {
-                    if (!snapshot.exists()) {
+                    if (!snapshot.exists() && !isInitiatorRef.current) {
                         if (isMounted) {
                             toast({ title: 'Call has ended.', variant: 'destructive' });
                             handleLeaveCall();
@@ -165,9 +166,9 @@ function CallRoom({ callId }: { callId: string }) {
                     
                     const data = snapshot.data();
                     if (peerRef.current && !peerRef.current.destroyed) {
-                         if (data.answer && isInitiatorRef.current && peerRef.current.signalingState !== 'stable') {
+                         if (data?.answer && isInitiatorRef.current && peerRef.current.signalingState !== 'stable') {
                             peerRef.current.signal(JSON.parse(data.answer));
-                        } else if (data.offer && !isInitiatorRef.current && peerRef.current.signalingState !== 'stable') {
+                        } else if (data?.offer && !isInitiatorRef.current && peerRef.current.signalingState !== 'stable') {
                             peerRef.current.signal(JSON.parse(data.offer));
                         }
                     }
@@ -364,3 +365,5 @@ export default function CallPage() {
 
     return <CallRoom callId={callId} />;
 }
+
+    
