@@ -110,19 +110,19 @@ function CallRoom({ callId }: { callId: string }) {
                 
                 isInitiatorRef.current = !callSnap.exists();
                 
-                if (isInitiatorRef.current) {
-                    await setDoc(callDocRef, {
-                        callerId: user.uid,
-                        createdAt: serverTimestamp(),
-                    });
-                }
-                
                 const peer = new Peer({
                     initiator: isInitiatorRef.current,
                     trickle: true,
                     stream: stream,
                 });
                 peerRef.current = peer;
+
+                if (isInitiatorRef.current) {
+                    await setDoc(callDocRef, {
+                        callerId: user.uid,
+                        createdAt: serverTimestamp(),
+                    });
+                }
 
                 peer.on('signal', async (signalData) => {
                     if (signalData.type === 'offer') {
