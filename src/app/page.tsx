@@ -63,7 +63,7 @@ export default function Dashboard() {
               <CardDescription>Instantly create a new meeting room.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Link href={`/call?id=${generateSessionId()}`}>
+              <Link href={`/call?id=${generateSessionId()}`} prefetch={false}>
                 <Button className="w-full" size="lg">
                   <Video className="mr-2 h-5 w-5" />
                   Create Instant Meeting
@@ -119,7 +119,7 @@ export default function Dashboard() {
                     ))}
                   </div>
                   <Button variant="ghost" size="icon" asChild>
-                    <Link href={`/call?id=${generateSessionId()}`}>
+                    <Link href={`/call?id=${generateSessionId()}`} prefetch={false}>
                       <ChevronRight className="h-5 w-5 text-muted-foreground" />
                     </Link>
                   </Button>
@@ -132,5 +132,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
-    
