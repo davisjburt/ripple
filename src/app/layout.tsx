@@ -1,0 +1,63 @@
+
+'use client';
+
+import type { Metadata } from 'next';
+import './globals.css';
+import { AppLayout } from '../components/app-layout';
+import { Toaster } from '../components/ui/toaster';
+import React from 'react';
+import { usePathname } from 'next/navigation';
+import { AuthProvider } from '../hooks/use-auth';
+import { Inter } from 'next/font/google';
+
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+
+
+function AppContent({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isAuthPage = pathname === '/login' || pathname === '/signup';
+  const isCallPage = pathname === '/call';
+
+  if (isCallPage) {
+      return (
+           <AuthProvider>
+                {children}
+                <Toaster />
+           </AuthProvider>
+      )
+  }
+
+  return (
+    <AuthProvider>
+      {isAuthPage ? (
+        children
+      ) : (
+        <AppLayout>
+          {children}
+        </AppLayout>
+      )}
+      <Toaster />
+    </AuthProvider>
+  );
+}
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        <title>Ripple: Video Calling</title>
+        <meta name="description" content="A modern video calling application." />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      </head>
+      <body className={`${inter.variable} font-body antialiased`} suppressHydrationWarning>
+        <AppContent>{children}</AppContent>
+      </body>
+    </html>
+  );
+}
